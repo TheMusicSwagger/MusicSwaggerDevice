@@ -33,7 +33,7 @@ class Device(object):
         """
         return self.uid
 
-    def get_value(self):
+    def get_values(self):
         """
         :return: 'get_value()' de chaque 'SensorValue' de 'self.chanels'
         """
@@ -45,7 +45,7 @@ class Device(object):
         :return: 'self.get_value()'
         """
         self.refresh()
-        return self.get_value()
+        return self.get_values()
 
     def get_formated_value(self,new_format):
         """
@@ -172,13 +172,13 @@ class MyRandom2Device(ThreadedDevice):
         for chan in self.chanels:
             ran=chan.get_range()
             chan.set_value(random.randint(ran[0],ran[1]))
-        self.status = "Refreshed to : "+str(self.get_value())
+        self.status = "Refreshed to : "+str(self.get_values())
         super(MyRandom2Device,self).refresh()
 
 
 b = None
 try:
-    b=MyRandom2Device(lambda: print(b.get_uid(), b.get_value(), b.get_formated_value([0, 65535])),refresh_interval=100)
+    b=MyRandom2Device(lambda: print(b.get_uid(), b.get_values(), b.get_formated_value([0, 2**16-1])), refresh_interval=100)
     b.join()
 except NotImplementedError as e:
     print("Not implemented")
