@@ -1,5 +1,8 @@
 import hashlib,time,random,threading
-
+try:
+    import RPi.GPIO as GPIO
+except:
+    print("GPIO is for raspberry only !")
 class Device(object):
     """
     C'est une classe permettant de definir clairement les caracteristiques d'un device, et de servir d'interface entre chaque device et d'autres parties comme des controlleurs.
@@ -136,8 +139,11 @@ class SensorValue(object):
         """
         :param value: nouvelle valeur ('self.value_range[0]'<='value'<='self.value_range[1]')
         """
-        assert self.value_range[0]<=value<=self.value_range[1]
+        assert self.check_range(value)
         self.last_value=value
+
+    def check_range(self,value):
+        return self.value_range[0]<=value<=self.value_range[1]
 
     def get_value(self):
         """
@@ -175,6 +181,39 @@ class MyRandom2Device(ThreadedDevice):
         self.status = "Refreshed to : "+str(self.get_values())
         super(MyRandom2Device,self).refresh()
 
+class HCSR04UltrasonicGPIOSensor(ThreadedDevice):
+    """
+    HCSR04 device : distance ultrason (RPi GPIO seulement)
+    (https://electrosome.com/hc-sr04-ultrasonic-sensor-raspberry-pi/)
+    """
+    num_of_chanels = 1
+    chanels = [SensorValue([1,1000])]
+    def __init__(self,callback=None,refresh_interval=1000):
+        super(HCSR04UltrasonicGPIOSensor, self).__init__(callback,refresh_interval)
+        GPIO.setmode(GPIO.BCM)
+        self.trigger_pin=23
+        self.echo_pin =24
+        GPIO.setup(self.trigger_pin, GPIO.OUT)
+        GPIO.setup(self.echo_pin, GPIO.IN)
+        self.callback=callback
+        self.status="Init complete !"
+    
+    def refresh(self):
+        GPIO.output(self.trigger_pin, False)
+        time.sleep(0.1)
+        GPIO.output(self.trigger_pin, True)
+        time.sleep(0.00001)
+        GPIO.output(self.trigger_pin, False)
+        pulse_start,pulse_end=0,0
+        while GPIO.input(self.echo_pin) == 0:
+            pulse_start = time.time()
+        while GPIO.input(self.echo_pin) == 1:
+            pulse_end = time.time()
+        pulse_duration = pulse_end - pulse_start
+        distance = int(pulse_duration * 17000)
+        if self.chanels[0].check_range(distance):
+            self.chanels[0].set_value(distance)
+            super(HCSR04UltrasonicGPIOSensor, self).refresh()
 
 b = None
 try:
