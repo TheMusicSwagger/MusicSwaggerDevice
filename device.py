@@ -223,9 +223,9 @@ class HCSR04UltrasonicGPIOSensor(ThreadedDevice):
 b = None
 c=None
 try:
-    b=MyRandom2Device(lambda: print(b.get_uid(), b.get_values(), b.get_formated_value([0, 2**16-1])), refresh_interval=100)
+    b=MyRandom2Device(lambda: print(b.get_uid(), b.get_values(), b.get_formated_value([0, 2**16-1])), refresh_interval=500)
     if GPIO:
-        c = HCSR04UltrasonicGPIOSensor(lambda: print(b.get_uid(), b.get_values(), b.get_formated_value([0, 2 ** 16 - 1])),refresh_interval=800)
+        c = HCSR04UltrasonicGPIOSensor(lambda: print(c.get_uid(), c.get_values(), c.get_formated_value([0, 2 ** 16 - 1])),refresh_interval=500)
         c.join()
     b.join()
 except NotImplementedError as e:
