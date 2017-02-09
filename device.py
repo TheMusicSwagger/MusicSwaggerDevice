@@ -1,4 +1,4 @@
-import hashlib,time,random,threading
+import hashlib,time,random,threading,base64
 GPIO=None
 try:
     import RPi.GPIO as GPIO
@@ -21,7 +21,7 @@ class Device(object):
 
     def __init__(self):
         super(Device, self).__init__()
-        self.uid=hashlib.sha1((str(time.time())+"-"+str(random.randint(0,2**50))).encode()).hexdigest()
+        self.uid=(base64.b32encode(hashlib.md5((str(time.time())+"-"+str(random.randint(0,2**16))).encode()).digest())).decode("utf-8").replace("=","")
         # generation de 'uid' en fonction du temps (caractere unique) et de l'alea (cas ou deux objets sont formes en meme temps)
         print("Created device id="+self.get_uid())
 
@@ -77,7 +77,7 @@ class ThreadedDevice(Device,threading.Thread):
     refresh_interval=None
     # interval de relancement de 'self.refresh'
     callback=None
-    # fonction potentiellement donnee au device qui sera appelee lors du rafraichissement si differente de 'None'
+    # fonction potentiellement donnee au device qui sera appelee lors du rafraichissement si differente de 'None' (avec l'objet en argument)
     def __init__(self,callback,refresh_interval):
         super(ThreadedDevice, self).__init__()
         self.daemon=True
@@ -123,7 +123,7 @@ class ThreadedDevice(Device,threading.Thread):
         Voir 'Device.refresh()'
         """
         if self.callback:
-            self.callback()
+            self.callback(self)
 
 class SensorValue(object):
     """
@@ -220,12 +220,16 @@ class HCSR04UltrasonicGPIOSensor(ThreadedDevice):
         GPIO.cleanup()
         super(HCSR04UltrasonicGPIOSensor, self).kill()
 
+
+def display_info(obj):
+    print(obj.get_uid(), obj.get_values(), obj.get_formated_value([0, 2 ** 16 - 1]))
+
 b = None
 c=None
 try:
-    b=MyRandom2Device(lambda: print(b.get_uid(), b.get_values(), b.get_formated_value([0, 2**16-1])), refresh_interval=100)
+    b=MyRandom2Device(display_info, refresh_interval=100)
     if GPIO:
-        c = HCSR04UltrasonicGPIOSensor(lambda: print(b.get_uid(), b.get_values(), b.get_formated_value([0, 2 ** 16 - 1])),refresh_interval=800)
+        c = HCSR04UltrasonicGPIOSensor(display_info,refresh_interval=800)
         c.join()
     b.join()
 except NotImplementedError as e:
