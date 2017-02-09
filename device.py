@@ -1,4 +1,5 @@
 import hashlib,time,random,threading
+GPIO=None
 try:
     import RPi.GPIO as GPIO
 except:
@@ -187,7 +188,7 @@ class HCSR04UltrasonicGPIOSensor(ThreadedDevice):
     (https://electrosome.com/hc-sr04-ultrasonic-sensor-raspberry-pi/)
     """
     num_of_chanels = 1
-    chanels = [SensorValue([1,1000])]
+    chanels = [SensorValue([1,200])]
     def __init__(self,callback=None,refresh_interval=1000):
         super(HCSR04UltrasonicGPIOSensor, self).__init__(callback,refresh_interval)
         GPIO.setmode(GPIO.BCM)
@@ -214,14 +215,24 @@ class HCSR04UltrasonicGPIOSensor(ThreadedDevice):
         if self.chanels[0].check_range(distance):
             self.chanels[0].set_value(distance)
             super(HCSR04UltrasonicGPIOSensor, self).refresh()
+    
+    def kill(self):
+        GPIO.cleanup()
+        super(HCSR04UltrasonicGPIOSensor, self).kill()
 
 b = None
+c=None
 try:
     b=MyRandom2Device(lambda: print(b.get_uid(), b.get_values(), b.get_formated_value([0, 2**16-1])), refresh_interval=100)
+    if GPIO:
+        c = HCSR04UltrasonicGPIOSensor(lambda: print(b.get_uid(), b.get_values(), b.get_formated_value([0, 2 ** 16 - 1])),refresh_interval=800)
+        c.join()
     b.join()
 except NotImplementedError as e:
-    print("Not implemented")
+    print("Not implemented...")
 except KeyboardInterrupt as e:
     print("Exiting...")
     if b:
         b.kill()
+    if c:
+        c.kill()
