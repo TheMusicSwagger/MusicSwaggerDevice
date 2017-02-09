@@ -2,8 +2,9 @@ import hashlib,time,random,threading,base64
 GPIO=None
 try:
     import RPi.GPIO as GPIO
-except:
+except ImportError as e:
     print("GPIO is for raspberry only !")
+
 class Device(object):
     """
     C'est une classe permettant de definir clairement les caracteristiques d'un device, et de servir d'interface entre chaque device et d'autres parties comme des controlleurs.
