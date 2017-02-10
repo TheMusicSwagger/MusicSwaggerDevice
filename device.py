@@ -1,9 +1,11 @@
-import hashlib,time,random,threading,base64
-GPIO=None
+import hashlib, time, random, threading, base64
+
+GPIO = None
 try:
     import RPi.GPIO as GPIO
 except ImportError as e:
     print("GPIO is for raspberry only !")
+
 
 class Device(object):
     """
@@ -11,20 +13,23 @@ class Device(object):
     Elle ne contient pas d'implementation mais uniquement la structure.
     Il est recommande d'utiliser uniquement ces fonction et non celles ajoutees par une potentielle implementation pour des problemes de compatibilite.
     """
-    num_of_chanels=None
+    num_of_chanels = None
     # entier indiquant le nombre de "chanels" disponibles sur le device.
-    chanels=None
+    chanels = None
     # liste de 'SensorValue' representant les dernieres valeurs enregistrees
-    uid=None
+    uid = None
     # identifiant unique du device
-    status=None
+    status = None
+
     # chaine de caractere definissant le statut actuel du device
 
     def __init__(self):
         super(Device, self).__init__()
-        self.uid=(base64.b32encode(hashlib.md5((str(time.time())+"-"+str(random.randint(0,2**16))).encode()).digest())).decode("utf-8").replace("=","")
+        self.uid = (base64.b32encode(
+            hashlib.md5((str(time.time()) + "-" + str(random.randint(0, 2 ** 16))).encode()).digest())).decode(
+            "utf-8").replace("=", "")
         # generation de 'uid' en fonction du temps (caractere unique) et de l'alea (cas ou deux objets sont formes en meme temps)
-        print("Created device id="+self.get_uid())
+        print("Created device id=" + self.get_uid())
 
     def get_status(self):
         """
@@ -52,13 +57,12 @@ class Device(object):
         self.refresh()
         return self.get_values()
 
-    def get_formated_value(self,new_format):
+    def get_formated_value(self, new_format):
         """
         :param new_format: liste 2 elements [min,max]
         :return: 'get_formated_value(new_format)' de chaque 'SensorValue' de 'self.chanels'
         """
         return [val.get_formated_value(new_format) for val in self.chanels]
-
 
     def refresh(self):
         """
@@ -67,25 +71,26 @@ class Device(object):
         """
         raise NotImplementedError()
 
-class ThreadedDevice(Device,threading.Thread):
+
+class ThreadedDevice(Device, threading.Thread):
     """
     Une version sur thread de device (dans le cas ou l'appareil aurait besoin d'un rafraichissement constant.
     """
-    is_killed=None
+    is_killed = None
     # booleen qui permet de stopper la boucle principal du thread et donc de l'arreter
-    is_running=None
+    is_running = None
     # booleen qui permet de mettre en pause le thread
-    refresh_interval=None
+    refresh_interval = None
     # interval de relancement de 'self.refresh'
-    callback=None
+    callback = None
     # fonction potentiellement donnee au device qui sera appelee lors du rafraichissement si differente de 'None' (avec l'objet en argument)
-    def __init__(self,callback,refresh_interval):
+    def __init__(self, callback, refresh_interval):
         super(ThreadedDevice, self).__init__()
-        self.daemon=True
+        self.daemon = True
         # ferme le Thread quand le programme principal se termine
-        self.refresh_interval=refresh_interval
-        self.callback=callback
-        self.is_running=False
+        self.refresh_interval = refresh_interval
+        self.callback = callback
+        self.is_running = False
         self.is_killed = False
         self.start()
 
@@ -93,9 +98,9 @@ class ThreadedDevice(Device,threading.Thread):
         """
         Fonction execute dans un different thread.
         """
-        self.is_running=True
+        self.is_running = True
         while not self.is_killed:
-            time.sleep(self.refresh_interval/1000)
+            time.sleep(self.refresh_interval / 1000)
             if self.is_running:
                 self.refresh()
 
@@ -103,20 +108,20 @@ class ThreadedDevice(Device,threading.Thread):
         """
         Met en pause le thread.
         """
-        self.is_running=False
+        self.is_running = False
 
     def play(self):
         """
         Relance le thread.
         """
-        self.is_running=True
+        self.is_running = True
 
     def kill(self):
         """
         Stoppe le thread.
         """
         self.pause()
-        self.is_killed=True
+        self.is_killed = True
         self.join()
 
     def refresh(self):
@@ -126,26 +131,35 @@ class ThreadedDevice(Device,threading.Thread):
         if self.callback:
             self.callback(self)
 
-class SensorValue(object):
+
+class DeviceChanel(object):
     """
     Petite classe permettant de stocker en plus de la derniere valeur, l'interval de valeurs possibles.
     """
-    value_range=None
-    # liste de deux elements representant intervalle de valeurs possibles
-    last_value=None
-    # entier representant la valeur actuelle du sensor
-    def __init__(self,value_range):
-        self.value_range=value_range
 
-    def set_value(self,value):
+    value_range = None
+    # liste de deux elements representant intervalle de valeurs possibles
+    last_value = None
+    # entier representant la valeur actuelle du sensor
+    uid = None
+    # identifiant unique de la chanel
+
+    def __init__(self, value_range):
+        self.uid = (base64.b32encode(
+            hashlib.md5((str(time.time()) + "-" + str(random.randint(0, 2 ** 16))).encode()).digest())).decode(
+            "utf-8").replace("=", "")
+        # generation de 'uid' en fonction du temps (caractere unique) et de l'alea (cas ou deux objets sont formes en meme temps)
+        self.value_range = value_range
+
+    def set_value(self, value):
         """
         :param value: nouvelle valeur ('self.value_range[0]'<='value'<='self.value_range[1]')
         """
         assert self.check_range(value)
-        self.last_value=value
+        self.last_value = value
 
-    def check_range(self,value):
-        return self.value_range[0]<=value<=self.value_range[1]
+    def check_range(self, value):
+        return self.value_range[0] <= value <= self.value_range[1]
 
     def get_value(self):
         """
@@ -153,35 +167,45 @@ class SensorValue(object):
         """
         return self.last_value
 
+    def get_uid(self):
+        """
+        :return: 'self.uid'
+        """
+        return self.uid
+
     def get_range(self):
         """
         :return: 'self.value_range'
         """
         return self.value_range
 
-    def get_formated_value(self,new_format):
+    def get_formated_value(self, new_format):
         """
         :param new_format: liste 2 elements [min,max]
         :return: 'self.get_value()' formate avec l'interval 'new_format'
         """
-        if self.get_value()!=None:
-            return int(((self.get_value()-self.value_range[0])*(new_format[1]-new_format[0])/(self.value_range[1]-self.value_range[0]))+new_format[0])
+        if self.get_value() != None:
+            return int(((self.get_value() - self.value_range[0]) * (new_format[1] - new_format[0]) / (
+                self.value_range[1] - self.value_range[0])) + new_format[0])
         return None
+
 
 class MyRandom2Device(ThreadedDevice):
     num_of_chanels = 2
-    chanels = [SensorValue([-100,100]),SensorValue([-100,100])]
-    def __init__(self,callback=None,refresh_interval=1000):
-        super(MyRandom2Device, self).__init__(callback,refresh_interval)
-        self.status="Started !"
-        self.callback=callback
+    chanels = [DeviceChanel([-100, 100]), DeviceChanel([-100, 100])]
+
+    def __init__(self, callback=None, refresh_interval=1000):
+        super(MyRandom2Device, self).__init__(callback, refresh_interval)
+        self.status = "Started !"
+        self.callback = callback
 
     def refresh(self):
         for chan in self.chanels:
-            ran=chan.get_range()
-            chan.set_value(random.randint(ran[0],ran[1]))
-        self.status = "Refreshed to : "+str(self.get_values())
-        super(MyRandom2Device,self).refresh()
+            ran = chan.get_range()
+            chan.set_value(random.randint(ran[0], ran[1]))
+        self.status = "Refreshed to : " + str(self.get_values())
+        super(MyRandom2Device, self).refresh()
+
 
 class HCSR04UltrasonicGPIOSensor(ThreadedDevice):
     """
@@ -189,24 +213,25 @@ class HCSR04UltrasonicGPIOSensor(ThreadedDevice):
     (https://electrosome.com/hc-sr04-ultrasonic-sensor-raspberry-pi/)
     """
     num_of_chanels = 1
-    chanels = [SensorValue([1,200])]
-    def __init__(self,callback=None,refresh_interval=1000):
-        super(HCSR04UltrasonicGPIOSensor, self).__init__(callback,refresh_interval)
+    chanels = [DeviceChanel([1, 200])]
+
+    def __init__(self, callback=None, refresh_interval=1000):
+        super(HCSR04UltrasonicGPIOSensor, self).__init__(callback, refresh_interval)
         GPIO.setmode(GPIO.BCM)
-        self.trigger_pin=23
-        self.echo_pin =24
+        self.trigger_pin = 23
+        self.echo_pin = 24
         GPIO.setup(self.trigger_pin, GPIO.OUT)
         GPIO.setup(self.echo_pin, GPIO.IN)
-        self.callback=callback
-        self.status="Init complete !"
-    
+        self.callback = callback
+        self.status = "Init complete !"
+
     def refresh(self):
         GPIO.output(self.trigger_pin, False)
         time.sleep(0.1)
         GPIO.output(self.trigger_pin, True)
         time.sleep(0.00001)
         GPIO.output(self.trigger_pin, False)
-        pulse_start,pulse_end=0,0
+        pulse_start, pulse_end = 0, 0
         while GPIO.input(self.echo_pin) == 0:
             pulse_start = time.time()
         while GPIO.input(self.echo_pin) == 1:
@@ -216,28 +241,29 @@ class HCSR04UltrasonicGPIOSensor(ThreadedDevice):
         if self.chanels[0].check_range(distance):
             self.chanels[0].set_value(distance)
             super(HCSR04UltrasonicGPIOSensor, self).refresh()
-    
+
     def kill(self):
         GPIO.cleanup()
         super(HCSR04UltrasonicGPIOSensor, self).kill()
 
+if __name__=="__main__":
+    def display_info(obj):
+        print(obj.get_uid(), obj.get_values(), obj.get_formated_value([0, 2 ** 16 - 1]))
 
-def display_info(obj):
-    print(obj.get_uid(), obj.get_values(), obj.get_formated_value([0, 2 ** 16 - 1]))
 
-b = None
-c=None
-try:
-    b=MyRandom2Device(display_info, refresh_interval=100)
-    if GPIO:
-        c = HCSR04UltrasonicGPIOSensor(display_info,refresh_interval=800)
-        c.join()
-    b.join()
-except NotImplementedError as e:
-    print("Not implemented...")
-except KeyboardInterrupt as e:
-    print("Exiting...")
-    if b:
-        b.kill()
-    if c:
-        c.kill()
+    b = None
+    c = None
+    try:
+        b = MyRandom2Device(display_info, refresh_interval=100)
+        if GPIO:
+            c = HCSR04UltrasonicGPIOSensor(display_info, refresh_interval=800)
+            c.join()
+        b.join()
+    except NotImplementedError as e:
+        print("Not implemented...")
+    except KeyboardInterrupt as e:
+        print("Exiting...")
+        if b:
+            b.kill()
+        if c:
+            c.kill()
