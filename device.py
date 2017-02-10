@@ -1,4 +1,4 @@
-import hashlib, time, random, threading, base64
+import time, random, threading, uuid, os, config as cfg
 
 GPIO = None
 try:
@@ -25,10 +25,7 @@ class Device(object):
 
     def __init__(self):
         super(Device, self).__init__()
-        self.uid = (base64.b32encode(
-            hashlib.md5((str(time.time()) + "-" + str(random.randint(0, 2 ** 16))).encode()).digest())).decode(
-            "utf-8").replace("=", "")
-        # generation de 'uid' en fonction du temps (caractere unique) et de l'alea (cas ou deux objets sont formes en meme temps)
+        self.uid = str(uuid.uuid4()).replace("-","")
         print("Created device id=" + self.get_uid())
 
     def get_status(self):
@@ -49,7 +46,7 @@ class Device(object):
         """
         return [val.get_value() for val in self.chanels]
 
-    def get_fresh_value(self):
+    def get_fresh_values(self):
         """
         Cette fonction va simplement rafraichir les donees avant de les retourner.
         :return: 'self.get_value()'
@@ -57,12 +54,12 @@ class Device(object):
         self.refresh()
         return self.get_values()
 
-    def get_formated_value(self, new_format):
+    def get_formated_values(self, new_format):
         """
         :param new_format: liste 2 elements [min,max]
-        :return: 'get_formated_value(new_format)' de chaque 'SensorValue' de 'self.chanels'
+        :return: 'get_formated_values(new_format)' de chaque 'SensorValue' de 'self.chanels'
         """
-        return [val.get_formated_value(new_format) for val in self.chanels]
+        return [val.get_formated_values(new_format) for val in self.chanels]
 
     def refresh(self):
         """
@@ -70,6 +67,12 @@ class Device(object):
         WARNING : Elle peut donc prendre un certain temps a s'executer !
         """
         raise NotImplementedError()
+
+    def get_num_of_chanels(self):
+        """
+        :return: 'self.num_of_chanels'
+        """
+        return self.num_of_chanels
 
 
 class ThreadedDevice(Device, threading.Thread):
@@ -83,6 +86,7 @@ class ThreadedDevice(Device, threading.Thread):
     refresh_interval = None
     # interval de relancement de 'self.refresh'
     callback = None
+
     # fonction potentiellement donnee au device qui sera appelee lors du rafraichissement si differente de 'None' (avec l'objet en argument)
     def __init__(self, callback, refresh_interval):
         super(ThreadedDevice, self).__init__()
@@ -142,13 +146,11 @@ class DeviceChanel(object):
     last_value = None
     # entier representant la valeur actuelle du sensor
     uid = None
+
     # identifiant unique de la chanel
 
     def __init__(self, value_range):
-        self.uid = (base64.b32encode(
-            hashlib.md5((str(time.time()) + "-" + str(random.randint(0, 2 ** 16))).encode()).digest())).decode(
-            "utf-8").replace("=", "")
-        # generation de 'uid' en fonction du temps (caractere unique) et de l'alea (cas ou deux objets sont formes en meme temps)
+        self.uid = str(uuid.uuid4()).replace("-","")
         self.value_range = value_range
 
     def set_value(self, value):
@@ -179,7 +181,7 @@ class DeviceChanel(object):
         """
         return self.value_range
 
-    def get_formated_value(self, new_format):
+    def get_formated_values(self, new_format):
         """
         :param new_format: liste 2 elements [min,max]
         :return: 'self.get_value()' formate avec l'interval 'new_format'
@@ -246,24 +248,33 @@ class HCSR04UltrasonicGPIOSensor(ThreadedDevice):
         GPIO.cleanup()
         super(HCSR04UltrasonicGPIOSensor, self).kill()
 
-if __name__=="__main__":
-    def display_info(obj):
-        print(obj.get_uid(), obj.get_values(), obj.get_formated_value([0, 2 ** 16 - 1]))
+class Communicator():
+    pass
 
+class Brain(object):
+    global_uid=None
+    # chaine de caractere unique permettant d'indentifier un device "persistante"
+    communication_id=None
+    # chaine de caractere unique courte donnee par le server a la connection du device
+    device=None
+    # correspond au device
+    communicator=None
+    # correspond au communicator
+    def __init__(self):
+        if os.path.isfile(cfg.GUID_FILENAME):
+            guidfile=open(cfg.GUID_FILENAME,"r")
+            self.global_uid=guidfile.read()
+            guidfile.close()
+        else:
+            guidfile=open(cfg.GUID_FILENAME,"w")
+            self.global_uid=uuid.uuid4()
+            guidfile.write(self.global_uid)
+            guidfile.close()
+        self.device=MyRandom2Device()
+        self.communicator=Communicator()
 
-    b = None
-    c = None
+if __name__ == "__main__":
     try:
-        b = MyRandom2Device(display_info, refresh_interval=100)
-        if GPIO:
-            c = HCSR04UltrasonicGPIOSensor(display_info, refresh_interval=800)
-            c.join()
-        b.join()
-    except NotImplementedError as e:
-        print("Not implemented...")
+        brain=Brain()
     except KeyboardInterrupt as e:
         print("Exiting...")
-        if b:
-            b.kill()
-        if c:
-            c.kill()
