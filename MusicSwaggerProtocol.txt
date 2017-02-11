@@ -5,10 +5,11 @@ MusicSwaggerProtocol v1.0 definition :
     - port : 55666
 
 Data representation :
-    | DEST CUID | OP NUM | DATA LEN | DATA | ( CRC |)
-    | (8b)      | (8b)   | (8b)     | (8b) | ( (8b)|)
+    | DEST CUID | SRC CUID | OP NUM | DATA LEN | DATA | ( CRC |)
+    | (8b)      | (8b)     | (8b)   | (8b)     | (8b) | ( (8b)|)
 
     - DESTination Connection Unique Identifier : the CUID of the destination of the packet (0x00 is the server, 0xff is no one particularly)
+    - SouRCe CUID : the CUID of the source of the packet
     - OPeration NUMber : number describing wich operation is given
     - DATA LENgth : the size of the data following in bytes
     - DATA : the actual data of the packet, formatted as the OP requires to
@@ -50,7 +51,7 @@ Operations list :
         NO DATA
 
     - 0x04 = GIVE SPEC :
-        - Give specification (generally for the server about the device)
+        - Give specification (generally to the server from the device)
         ### TO COMPLETE ###
 
     - 0x10 = ASK PRECISION :

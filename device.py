@@ -246,14 +246,14 @@ class Communicator(object):
     def __init__(self,global_uid):
         self.global_uid=global_uid
         self.sock=socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.sock.settimeout(5)
+        self.sock.bind(('',cfg.SERVER_PORT+1))
+        self.sock.settimeout(1)
         # maximum d'attente pour recevoir des donnees (en secondes)
         try:
             self.server_ip=socket.gethostbyname(cfg.SERVER_HOSTNAME)
             # recuperation de l'ip du server
-        except socket.gaierror:
-            self.server_ip="127.0.0.1"
-            cfg.log("Can't find server !!!")
+        except socket.gaierror as e:
+            cfg.log("Can't find server !!!",e)
         self.ask_for_cuid()
         self.ask_for_precision()
 
@@ -268,12 +268,20 @@ class Communicator(object):
         """
         if self.get_server_ip()==None:
             raise Exception("Must get server IP first !")
-        packet=dest.to_bytes(1,byteorder="big")+fid.to_bytes(1,byteorder="big")+len(data).to_bytes(2,byteorder="big")+data
+        tcuid=self.communication_uid
+        if self.communication_uid==None:
+            tcuid=0xff
+        packet=dest.to_bytes(1,"big")+tcuid.to_bytes(1,"big")+fid.to_bytes(1,"big")+len(data).to_bytes(1,"big")+data
         packet+=self.calculate_crc(packet)
         self.send_raw(packet)
+        try:
+            return self.sock.recvfrom(cfg.MAX_PACKET_SIZE)[0]
+        except:
+            cfg.log("No response...")
+            return None
 
     def send_raw(self,data):
-        self.sock.sendto(data,(self.server_ip,cfg.SERVER_PORT))
+        self.sock.sendto(data,(cfg.SERVER_HOSTNAME,cfg.SERVER_PORT))
 
     def calculate_crc(self,data):
         return b''
@@ -282,9 +290,9 @@ class Communicator(object):
         parsed=self.parse_packet(packet)
         if parsed:
             if parsed[0] == 0xff:
-                return True
+                return parsed[1:-1]
             if parsed[0]==self.get_cuid():
-                return True
+                return parsed[1:-1]
             elif alert:
                 self.tell_invalid_cuid()
                 return False
@@ -294,33 +302,36 @@ class Communicator(object):
 
     def parse_packet(self,packet):
         try:
-            cuid=int.from_bytes(packet[:1],byteorder="big")
-            fid=int.from_bytes(packet[1:2],byteorder="big")
-            datlen=int.from_bytes(packet[2:3],byteorder="big")
-            dat=packet[3:3+datlen]
-            crc=packet[3+datlen:]
-            return [cuid,fid,dat,crc]
+            tocuid=int.from_bytes(packet[:1],"big")
+            fromcuid=int.from_bytes(packet[1:2],"big")
+            fid=int.from_bytes(packet[2:3],"big")
+            datlen=int.from_bytes(packet[3:4],"big")
+            dat=packet[4:4+datlen]
+            crc=packet[4+datlen:]
+            final=[tocuid,fromcuid,fid,dat,crc]
+            cfg.log(final)
+            return final
         except:
-            cfg.log("Parse error...")
+            cfg.log("Parse error...",packet)
             return None
 
     def ask_for_cuid(self):
         if self.communication_uid==None:
-            self.communication_uid=self.parse_packet(self.send(0,1,binascii.unhexlify(self.get_guid())))[2]
+            self.communication_uid=int.from_bytes(self.check_packet(self.send(0,0x01,binascii.unhexlify(self.get_guid())))[2],"big")
             cfg.log(self.communication_uid)
 
 
     def ask_for_precision(self):
         if self.server_precision==None:
-            self.server_precision=self.parse_packet(self.send(0,1))[2]
+            self.server_precision=int.from_bytes(self.check_packet(self.send(0,0x10))[2],"big")
             cfg.log(self.server_precision)
 
 
     def tell_invalid_cuid(self):
-        self.send(0,0,(2).to_bytes(1,byteorder="big"))
+        self.send(0,0,(2).to_bytes(1,"big"))
 
     def tell_invalid_packet(self):
-        self.send(0,0,(1).to_bytes(1,byteorder="big"))
+        self.send(0,0,(1).to_bytes(1,"big"))
 
     def get_guid(self):
         """
@@ -382,8 +393,8 @@ class Brain(object):
 
     def send_data_to_serv(self,device):
         if self.server_precision!=None:
-            data=b''.join([val.to_bytes(self.server_precision,byteorder="big") for val in device.get_formated_values(self.server_precision)])
-            cfg.log(data)
+            cfg.log(device.get_formated_values(self.server_precision))
+            data=self.server_precision.to_bytes(1,"big")+b''.join([val.to_bytes((self.server_precision+1)//8,"big") for val in device.get_formated_values(self.server_precision)])
             self.communicator.send(0,0x21,data)
 
 if __name__ == "__main__":
