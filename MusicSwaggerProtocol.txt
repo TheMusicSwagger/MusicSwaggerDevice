@@ -51,6 +51,7 @@ Operations list :
 
     - 0x04 = GIVE SPEC :
         - Give specification (generally for the server about the device)
+        ### TO COMPLETE ###
 
     - 0x10 = ASK PRECISION :
         - To get the precision of the data the server wants to get
@@ -69,5 +70,9 @@ Operations list :
 
     - 0x21 = GIVE DATA
         - When device need to give data to server
-        | PREC |
-        | (8b) |
+        | PREC | CHAN1 | ... |
+        | (8b) | (PREC)| ... |
+        - PREC :
+            The precision of the following data
+        - CHAN1,... :
+            The values of each chanels
