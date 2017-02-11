@@ -1,0 +1,73 @@
+MusicSwaggerProtocol v1.0 definition :
+    - based on UDP/IP
+    - simplest possible (shortest)
+    - Server's hostname : "musicswagger_server"
+    - port : 55666
+
+Data representation :
+    | DEST CUID | OP NUM | DATA LEN | DATA | ( CRC |)
+    | (8b)      | (8b)   | (8b)     | (8b) | ( (8b)|)
+
+    - DESTination Connection Unique Identifier : the CUID of the destination of the packet (0x00 is the server, 0xff is no one particularly)
+    - OPeration NUMber : number describing wich operation is given
+    - DATA LENgth : the size of the data following in bytes
+    - DATA : the actual data of the packet, formatted as the OP requires to
+    (- CRC)
+
+Operations list :
+    - OP NUM = OP NAME :
+        - Description...
+        | DATA DESC    |
+        | (SIZE in bit)|
+        - PARAMETER :
+            - OPTION : DESC
+
+    - 0x00 = INFO :
+        - Generally for server response, give some info about the situation
+        | ID  |
+        | (8b)|
+        - ID :
+            - 0x00 : Nothing to say
+            - 0x01 : Packet error
+            - 0x02 : Invalid CUID
+
+    - 0x01 = ASK CUID :
+        - When you start a device that needs a CUID to communicate over the network
+        | GUID   |
+        | (128b) |
+        - GUID :
+            The GUID of the device
+
+    - 0x02 = GIVE CUID :
+        - Server response to a 0x01 (sent to CUID 0xff)
+        | CUID |
+        | (8b) |
+        - CUID :
+            The new CUID of the device
+
+    - 0x03 = ASK SPEC :
+        - Ask for specification (generally from the server to the device)
+        NO DATA
+
+    - 0x04 = GIVE SPEC :
+        - Give specification (generally for the server about the device)
+
+    - 0x10 = ASK PRECISION :
+        - To get the precision of the data the server wants to get
+        NO DATA
+
+    - 0x11 = GIVE PRECISION :
+        - Server response to a 0x10
+        | PREC |
+        | (8b) |
+        - PREC :
+            The actual precision of the server (in number of bits, generally 0x0f)
+
+    - 0x20 = ASK DATA :
+        - When the server wants data
+        NO DATA
+
+    - 0x21 = GIVE DATA
+        - When device need to give data to server
+        | PREC |
+        | (8b) |

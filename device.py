@@ -1,4 +1,5 @@
-import time, random, threading, uuid, os, config as cfg
+import time, random, threading, uuid, os, socket,binascii
+import config as cfg
 
 GPIO = None
 try:
@@ -17,28 +18,17 @@ class Device(object):
     # entier indiquant le nombre de "chanels" disponibles sur le device.
     chanels = None
     # liste de 'SensorValue' representant les dernieres valeurs enregistrees
-    uid = None
-    # identifiant unique du device
     status = None
-
     # chaine de caractere definissant le statut actuel du device
 
     def __init__(self):
         super(Device, self).__init__()
-        self.uid = str(uuid.uuid4()).replace("-","")
-        print("Created device id=" + self.get_uid())
 
     def get_status(self):
         """
         :return: 'self.status'
         """
         return self.status
-
-    def get_uid(self):
-        """
-        :return: 'self.uid'
-        """
-        return self.uid
 
     def get_values(self):
         """
@@ -54,11 +44,12 @@ class Device(object):
         self.refresh()
         return self.get_values()
 
-    def get_formated_values(self, new_format):
+    def get_formated_values(self, precision):
         """
-        :param new_format: liste 2 elements [min,max]
+        :param precision: entier tel que 0<=value<=2**'precision'-1
         :return: 'get_formated_values(new_format)' de chaque 'SensorValue' de 'self.chanels'
         """
+        new_format=[0,2**precision-1]
         return [val.get_formated_values(new_format) for val in self.chanels]
 
     def refresh(self):
@@ -90,7 +81,7 @@ class ThreadedDevice(Device, threading.Thread):
     # fonction potentiellement donnee au device qui sera appelee lors du rafraichissement si differente de 'None' (avec l'objet en argument)
     def __init__(self, callback, refresh_interval):
         super(ThreadedDevice, self).__init__()
-        self.daemon = True
+        #self.daemon = True
         # ferme le Thread quand le programme principal se termine
         self.refresh_interval = refresh_interval
         self.callback = callback
@@ -135,22 +126,22 @@ class ThreadedDevice(Device, threading.Thread):
         if self.callback:
             self.callback(self)
 
+    def set_refresh_interval(self,refresh_interval):
+        """
+        :param refresh_interval: Voir 'self.refresh_interval'
+        """
+        self.refresh_interval=refresh_interval
 
 class DeviceChanel(object):
     """
     Petite classe permettant de stocker en plus de la derniere valeur, l'interval de valeurs possibles.
     """
-
     value_range = None
     # liste de deux elements representant intervalle de valeurs possibles
     last_value = None
     # entier representant la valeur actuelle du sensor
-    uid = None
-
-    # identifiant unique de la chanel
 
     def __init__(self, value_range):
-        self.uid = str(uuid.uuid4()).replace("-","")
         self.value_range = value_range
 
     def set_value(self, value):
@@ -168,12 +159,6 @@ class DeviceChanel(object):
         :return: 'self.last_value'
         """
         return self.last_value
-
-    def get_uid(self):
-        """
-        :return: 'self.uid'
-        """
-        return self.uid
 
     def get_range(self):
         """
@@ -194,8 +179,7 @@ class DeviceChanel(object):
 
 class MyRandom2Device(ThreadedDevice):
     num_of_chanels = 2
-    chanels = [DeviceChanel([-100, 100]), DeviceChanel([-100, 100])]
-
+    chanels = [DeviceChanel([-100, 100]) for i in range(num_of_chanels)]
     def __init__(self, callback=None, refresh_interval=1000):
         super(MyRandom2Device, self).__init__(callback, refresh_interval)
         self.status = "Started !"
@@ -248,18 +232,133 @@ class HCSR04UltrasonicGPIOSensor(ThreadedDevice):
         GPIO.cleanup()
         super(HCSR04UltrasonicGPIOSensor, self).kill()
 
-class Communicator():
-    pass
+class Communicator(object):
+    communication_uid=None
+    # uid court donne par le server
+    server_ip=None
+    # chaine de caractere representant l'adrese ip du server
+    sock=None
+    # socket udp permettant l'envoi et la reception de donnees
+    global_uid=None
+    # voir 'Brain.global_uid'
+    server_precision=None
+    # correspond a la precision attendue par le server
+    def __init__(self,global_uid):
+        self.global_uid=global_uid
+        self.sock=socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.settimeout(5)
+        # maximum d'attente pour recevoir des donnees (en secondes)
+        try:
+            self.server_ip=socket.gethostbyname(cfg.SERVER_HOSTNAME)
+            # recuperation de l'ip du server
+        except socket.gaierror:
+            self.server_ip="127.0.0.1"
+            cfg.log("Can't find server !!!")
+        self.ask_for_cuid()
+        self.ask_for_precision()
+
+
+    def send(self,dest,fid,data=b''):
+        """
+        Contruit et envoie un packet au server.
+        :param dest: entier representant le cuid du destinataire
+        :param fid: entier representant la fonction demandee
+        :param data: bytes correspondants aux donnees formates pour la fonction (pas de verification avant envoi)
+        :return: la reponse du server (peut prendre du temps)
+        """
+        if self.get_server_ip()==None:
+            raise Exception("Must get server IP first !")
+        packet=dest.to_bytes(1,byteorder="big")+fid.to_bytes(1,byteorder="big")+len(data).to_bytes(2,byteorder="big")+data
+        packet+=self.calculate_crc(packet)
+        self.send_raw(packet)
+
+    def send_raw(self,data):
+        self.sock.sendto(data,(self.server_ip,cfg.SERVER_PORT))
+
+    def calculate_crc(self,data):
+        return b''
+
+    def check_packet(self,packet,alert=True):
+        parsed=self.parse_packet(packet)
+        if parsed:
+            if parsed[0] == 0xff:
+                return True
+            if parsed[0]==self.get_cuid():
+                return True
+            elif alert:
+                self.tell_invalid_cuid()
+                return False
+        elif alert:
+            self.tell_invalid_packet()
+        return False
+
+    def parse_packet(self,packet):
+        try:
+            cuid=int.from_bytes(packet[:1],byteorder="big")
+            fid=int.from_bytes(packet[1:2],byteorder="big")
+            datlen=int.from_bytes(packet[2:3],byteorder="big")
+            dat=packet[3:3+datlen]
+            crc=packet[3+datlen:]
+            return [cuid,fid,dat,crc]
+        except:
+            cfg.log("Parse error...")
+            return None
+
+    def ask_for_cuid(self):
+        if self.communication_uid==None:
+            self.communication_uid=self.parse_packet(self.send(0,1,binascii.unhexlify(self.get_guid())))[2]
+            cfg.log(self.communication_uid)
+
+
+    def ask_for_precision(self):
+        if self.server_precision==None:
+            self.server_precision=self.parse_packet(self.send(0,1))[2]
+            cfg.log(self.server_precision)
+
+
+    def tell_invalid_cuid(self):
+        self.send(0,0,(2).to_bytes(1,byteorder="big"))
+
+    def tell_invalid_packet(self):
+        self.send(0,0,(1).to_bytes(1,byteorder="big"))
+
+    def get_guid(self):
+        """
+        :return: 'self.global_uid'
+        """
+        return self.global_uid
+
+    def get_cuid(self):
+        """
+        :return: 'self.communication_uid'
+        """
+        return self.communication_uid
+
+    def get_server_ip(self):
+        """
+        :return: 'self.server_ip'
+        """
+        return self.server_ip
+
+    def get_precision(self):
+        """
+        :return: 'self.server_precision'
+        """
+        return self.server_precision
+
+
 
 class Brain(object):
     global_uid=None
-    # chaine de caractere unique permettant d'indentifier un device "persistante"
+    # chaine de caractere unique "persistante" permettant d'indentifier un device
     communication_id=None
     # chaine de caractere unique courte donnee par le server a la connection du device
     device=None
     # correspond au device
     communicator=None
     # correspond au communicator
+    server_precision=None
+    # correspond a la precision attendue par le server
     def __init__(self):
         if os.path.isfile(cfg.GUID_FILENAME):
             guidfile=open(cfg.GUID_FILENAME,"r")
@@ -267,11 +366,25 @@ class Brain(object):
             guidfile.close()
         else:
             guidfile=open(cfg.GUID_FILENAME,"w")
-            self.global_uid=uuid.uuid4()
+            self.global_uid=str(uuid.uuid4()).replace("-","")
             guidfile.write(self.global_uid)
             guidfile.close()
-        self.device=MyRandom2Device()
-        self.communicator=Communicator()
+        cfg.log(self.get_guid())
+        self.communicator=Communicator(self.get_guid())
+        self.server_precision=self.communicator.get_precision()
+        self.device=MyRandom2Device(self.send_data_to_serv)
+
+    def get_guid(self):
+        """
+        :return: 'self.global_uid'
+        """
+        return self.global_uid
+
+    def send_data_to_serv(self,device):
+        if self.server_precision!=None:
+            data=b''.join([val.to_bytes(self.server_precision,byteorder="big") for val in device.get_formated_values(self.server_precision)])
+            cfg.log(data)
+            self.communicator.send(0,0x21,data)
 
 if __name__ == "__main__":
     try:
