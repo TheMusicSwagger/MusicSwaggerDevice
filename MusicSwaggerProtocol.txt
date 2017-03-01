@@ -10,8 +10,8 @@ Data representation :
 
     - DESTination Connection Unique Identifier : the CUID of the destination of the packet (0x00 is the server, 0xff is no one particularly)
     - SouRCe CUID : the CUID of the source of the packet
-    - OPeration NUMber : number describing wich operation is given
-    - DATA LENgth : the size of the data following in bytes
+    - OPeration NUMber : number describing which operation is given
+    - DATA LENgth : the size of the data followiENSng in bytes
     - DATA : the actual data of the packet, formatted as the OP requires to
     (- CRC)
 
@@ -52,7 +52,18 @@ Operations list :
 
     - 0x04 = GIVE SPEC :
         - Give specification (generally to the server from the device)
-        ### TO COMPLETE ###
+        | NCHAN | NLEN | DLEN | NAME   | DESC   |
+        | (8b)  | (8b) | (8b) | (NLENb)| (DLENb)|
+        - NCHAN :
+            The number of channel available
+        - NLEN :
+            The length of the device name
+        - DLEN :
+            The length of the description in bits
+        - NAME :
+            The name of the device
+        - DESC :
+            The description of the device
 
     - 0x10 = ASK PRECISION :
         - To get the precision of the data the server wants to get
@@ -76,4 +87,4 @@ Operations list :
         - PREC :
             The precision of the following data
         - CHAN1,... :
-            The values of each chanels
+            The values of each chanel

@@ -235,6 +235,8 @@ class HCSR04UltrasonicGPIOSensor(ThreadedDevice):
 class Communicator(object):
     communication_uid=None
     # uid court donne par le server
+    server_ip=None
+    # chaine de caractere representant l'adrese ip du server
     sock=None
     # socket udp permettant l'envoi et la reception de donnees
     global_uid=None
@@ -248,8 +250,8 @@ class Communicator(object):
         self.sock.settimeout(1)
         # maximum d'attente pour recevoir des donnees (en secondes)
         try:
-            socket.gethostbyname(cfg.SERVER_HOSTNAME)
-            # verification de la presence du server sur le reseau
+            self.server_ip=socket.gethostbyname(cfg.SERVER_HOSTNAME)
+            # recuperation de l'ip du server
         except socket.gaierror as e:
             cfg.log("Can't find server !!!",e)
         self.ask_for_cuid()
@@ -264,6 +266,8 @@ class Communicator(object):
         :param data: bytes correspondants aux donnees formates pour la fonction (pas de verification avant envoi)
         :return: la reponse du server (peut prendre du temps)
         """
+        if self.get_server_ip()==None:
+            raise Exception("Must get server IP first !")
         tcuid=self.communication_uid
         if self.communication_uid==None:
             tcuid=0xff
@@ -313,22 +317,14 @@ class Communicator(object):
 
     def ask_for_cuid(self):
         if self.communication_uid==None:
-            suc=self.check_packet(self.send(0,0x01,binascii.unhexlify(self.get_guid())))
-            if suc:
-                self.communication_uid=int.from_bytes(suc[2],"big")
-                cfg.log(self.communication_uid)
-            else:
-                cfg.log("CUID reception error !")
+            self.communication_uid=int.from_bytes(self.check_packet(self.send(0,0x01,binascii.unhexlify(self.get_guid())))[2],"big")
+            cfg.log(self.communication_uid)
 
 
     def ask_for_precision(self):
         if self.server_precision==None:
-            suc=self.check_packet(self.send(0,0x10))
-            if suc:
-                self.server_precision=int.from_bytes(suc[2],"big")
-                cfg.log(self.server_precision)
-            else:
-                cfg.log("PREC reception error !")
+            self.server_precision=int.from_bytes(self.check_packet(self.send(0,0x10))[2],"big")
+            cfg.log(self.server_precision)
 
 
     def tell_invalid_cuid(self):
@@ -348,6 +344,12 @@ class Communicator(object):
         :return: 'self.communication_uid'
         """
         return self.communication_uid
+
+    def get_server_ip(self):
+        """
+        :return: 'self.server_ip'
+        """
+        return self.server_ip
 
     def get_precision(self):
         """
