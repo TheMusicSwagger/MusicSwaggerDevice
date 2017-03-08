@@ -14,6 +14,12 @@ DB_PASS="thomas"
 DB_NAME="musicswagger_config"
 # database infos to connect
 
-def log(*args):
+def log(text):
     if DEBUG_MODE:
-        print(*args)
+        print("[---]",text)
+
+def warn(text):
+    if DEBUG_MODE:
+        raise Exception(text)
+    else:
+        print("[!!!]",text)
