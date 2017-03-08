@@ -3,7 +3,6 @@ MusicSwaggerProtocol v1.0 definition :
     - simplest possible (shortest)
     - Server's hostname : "musicswagger_server"
     - port : 55666
-    (2 kind of packets : asks/give and normal -> a ask packet wait for a response while a normal doesn't)
 
 Data representation :
     | DEST CUID | SRC CUID | OP NUM | DATA LEN | DATA | ( CRC |)
@@ -36,11 +35,24 @@ Operations list :
             - 0x04 : I'm still alive ! (if not received for 1min : forgetting the device
 
     - 0x01 = IAMNEW :
-        - When you start a device that needs a CUID to communicate over the network and give the specs
-        | GUID   | NCHAN | NLEN | DLEN | NAME   | DESC   |
-        | (128b) | (8b)  | (8b) | (8b) | (NLENb)| (DLENb)|
+        - When you start a device that needs a CUID to communicate over the network
+        | GUID   |
+        | (128b) |
         - GUID :
             The GUID of the device
+
+
+    - 0x02 = YOURETHIS :
+        - Server response to a 0x01 (give server specs and CUID)
+        | CUID |
+        | (8b) |
+        - CUID :
+            The new CUID of the device
+
+    -0x03 = MYSPEC :
+        - give the device specs to server
+        | NCHAN | NLEN | DLEN | NAME   | DESC   |
+        | (8b)  | (8b) | (8b) | (NLENb)| (DLENb)|
         - NCHAN :
             The number of channel available
         - NLEN :
@@ -52,20 +64,10 @@ Operations list :
         - DESC :
             The description of the device
 
-    - 0x02 = YOURETHIS :
-        - Server response to a 0x01 (give server specs and CUID)
-        | CUID | PREC |
-        | (8b) | (8b) |
-        - CUID :
-            The new CUID of the device
-        - PREC :
-            The actual precision of the server (in number of bits, generally 0x0f)
 
     - 0x10 = GIVE DATA
         - When device need to give data to server
-        | PREC | CHAN1 | ... |
-        | (8b) | (PREC)| ... |
-        - PREC :
-            The precision of the following data
+        | CHAN1            | ... |
+        | (DATA_VALUE_SIZE)| ... |
         - CHAN1, ... :
             The values of each chanel

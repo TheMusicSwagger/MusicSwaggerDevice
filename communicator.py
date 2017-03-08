@@ -1,7 +1,5 @@
-import threading, socket, binascii
+import threading, socket, binascii,pymysql,time
 import config as cfg
-import pymysql
-
 
 class Packet(object):
     from_cuid = None
@@ -111,21 +109,48 @@ class Sender(threading.Thread):
 
     is_running=None
     # the status of the sender (allows to stop it)
-    
-    def __init__(self):
+
+    queue=None
+    # packets waiting to be sent
+
+    def __init__(self,sock):
         super(Sender, self).__init__()
         self.is_running=True
+        self.sock=sock
+        self.queue=[]
+
+        self.daemon = True
+        # wait thread to stop before exiting program
+
+        self.start()
+        # starting the Thread
 
 
     def run(self):
+        """
+        Thread loop
+        """
         while self.is_running:
-            pass
+            if len(self.queue)>0:
+                current_packet=self.queue.pop(0)
+                current_packet.send(self.sock)
+            else:
+                time.sleep(0.01)
+
+    def add_to_queue(self,packet):
+        """
+        Add a new packet to the queue.
+        :param packet: the packet to send
+        """
+        self.queue.append(packet)
+        return self
 
     def kill(self):
         """
         Kill the Thread.
         """
         self.is_running = False
+        return self
 
 
 class Receiver(threading.Thread):
@@ -135,61 +160,33 @@ class Receiver(threading.Thread):
     is_running=None
     # the status of the receiver (allows to stop it)
 
-    def __init__(self):
+    callback=None
+    # callback of the 'Communicator' which will be called on receive
+    # will give the received 'Packet' as argument
+
+    def __init__(self,callback,sock):
         super(Receiver, self).__init__()
         self.is_running=True
+        self.callback=callback
+        self.sock=sock
+
+        self.daemon = True
+        # wait thread to stop before exiting program
+
+        self.start()
+        # starting the Thread
 
     def run(self):
+        """
+        Thread loop
+        """
         while self.is_running:
             raw_data, address = self.sock.recvfrom(cfg.MAX_PACKET_SIZE)
             packet=Packet().reconstruct(raw_data)
             cfg.log(packet)
-            if 1==1:
-                break
-            ppacket = None
-            if ppacket:
-                if ppacket[1] == 0x00:
-                    self.exec_callback(4, [ppacket[0], ppacket[2]])
-                    cfg.log("Info :" + str(ppacket[2]))
-                elif ppacket[1] == 0x01:
-                    cfg.log("Ask for CUID :" + str(ppacket[2]))
-                    cursor = self.database.cursor()
-                    cursor.execute("SELECT CUID from connections")
-                    dat = cursor.fetchall()
-                    cursor.close()
-                    for i in range(0x01, 0xFF):
-                        if not i in dat:
-                            cursor = self.database.cursor()
-                            cursor.execute(
-                                "INSERT INTO connections (GUID,CUID) VALUES ('" + binascii.hexlify(ppacket[2]).decode(
-                                    "ascii") + "'," + str(i) + ")")
-                            cursor.close()
-                            self.send(0xff, 0x02, i.to_bytes(1, "big"))
-                            break
-                elif ppacket[1] == 0x03:
-                    self.exec_callback(2, [ppacket[0], ppacket[2]])
-                    cfg.log("Ask for SPEC")
-                    self.send(ppacket[0], 0x04, b'')
-                elif ppacket[1] == 0x04:
-                    cfg.log("Give SPEC :" + str(ppacket[2]))
-                elif ppacket[1] == 0x10:
-                    self.exec_callback(5, [ppacket[0], ppacket[2]])
-                    cfg.log("Ask PREC")
-                    self.send(ppacket[0], 0x11, b'\x0f')
-                elif ppacket[1] == 0x11:
-                    cfg.log("Give PREC :" + str(ppacket[2]))
-                elif ppacket[1] == 0x20:
-                    self.exec_callback(3, [ppacket[0], ppacket[2]])
-                    cfg.log("Ask DATA")
-                elif ppacket[1] == 0x21:
-                    cfg.log("Give DATA :" + str(ppacket[2]))
-                    prec = (int.from_bytes(ppacket[2][:1], "big") + 1) // 8
-                    vals = []
-                    for i in range(2):
-                        # suppose qu'il y a 2 chanels : besoin de db pour stocker les specs
-                        vals.append(int.from_bytes(ppacket[2][1 + (i * prec):1 + ((i + 1) * prec)], "big"))
-                    cfg.log(str(prec)+str(vals))
+            self.callback(packet)
         self.sock.close()
+        # close socket on receiver kill
 
     def kill(self):
         """
@@ -198,18 +195,20 @@ class Receiver(threading.Thread):
         self.is_running = False
 
 
-class Communicator(threading.Thread):
+class Communicator(object):
     # constants
-    AVAILABLE_CALLBACKS = ["call_error", "call_unknown_packet", "call_ask_spec", "call_ask_data", "call_info",
-                           "call_ask_precision"]
+    AVAILABLE_CALLBACKS = ["call_error", "call_unknown_packet", "call_ask_spec", "call_info"]
     is_running = None
     # binding stops as soon as it's 'False'
 
     sock = None
     # socket udp to communicate data
 
-    server_precision = None
-    # correspond a la precision attendue
+    sender=None
+    # thread to send data
+
+    receiver=None
+    # thread to receive data
 
     address = None
     # tuple ip/port
@@ -224,7 +223,6 @@ class Communicator(threading.Thread):
     # guid value
 
     communication_uid = None
-
     # cuid value
 
     def __init__(self, guid, is_server=True, **ka):
@@ -242,34 +240,19 @@ class Communicator(threading.Thread):
             self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
             self.sock.bind(('', cfg.COMMUNICATION_PORT))
-            """
-            # find unused port and create binding
-            if port is None:
-                self.sock.bind(('',0))
-                # random assigned by the system
-            else:
-                self.sock.bind(('', port))
-                # use given port
-            """
-
             self.address = self.sock.getsockname()
             cfg.log("Listening on" + str(self.address))
         except:
             cfg.warn("Socket setup error !")
 
-        # start thread
-        self.daemon = True
-        # wait thread to stop before exiting program
-
-        self.is_running = True
-        self.start()
-        # start the thread
-
         self.is_server = is_server
         self.global_uid = guid
 
+        self.sender=Sender(self.sock)
+        self.receiver = Receiver(lambda p:self.on_receive(p),sock)
+
         if self.is_server:
-            self.communication_uid = 0x00
+            self.communication_uid = cfg.CUID_SERVER
             # databases setup
             try:
                 self.database = pymysql.connect(cfg.DB_IP, cfg.DB_USER, cfg.DB_PASS, cfg.DB_NAME)
@@ -290,39 +273,49 @@ class Communicator(threading.Thread):
         return self.callbacks[id](data)
 
     def init_connection(self):
-        packed_data = binascii.unhexlify(self.get_guid()) + b""
-        self.send(0x00, 0x01, packed_data)
+        packed_data = binascii.unhexlify(self.get_guid())
+        self.send(cfg.CUID_SERVER,0x01,packed_data)
         # to server : IAMNEW
 
-    def run(self):
-        while self.is_running:
-            packet, address = self.sock.recvfrom(cfg.MAX_PACKET_SIZE)
-            ppacket = self.check_packet(packet)
-            if ppacket:
-                if ppacket[1] == 0x00:
-                    self.exec_callback(4, [ppacket[0], ppacket[2]])
-                    cfg.log("Info :" + str(ppacket[2]))
-                elif ppacket[1] == 0x01:
-                    cfg.log("Ask for CUID :" + str(ppacket[2]))
-                    cursor = self.database.cursor()
-                    cursor.execute("SELECT CUID from connections")
-                    dat = cursor.fetchall()
-                    cursor.close()
-                    for i in range(0x01, 0xFF):
-                        if not i in dat:
-                            cursor = self.database.cursor()
-                            cursor.execute(
-                                "INSERT INTO connections (GUID,CUID) VALUES ('" + binascii.hexlify(ppacket[2]).decode(
-                                    "ascii") + "'," + str(i) + ")")
-                            cursor.close()
-                            self.send(0xff, 0x02, i.to_bytes(1, "big"))
-                            break
-                elif ppacket[1] == 0x03:
-                    self.exec_callback(2, [ppacket[0], ppacket[2]])
-                    cfg.log("Ask for SPEC")
-                    self.send(ppacket[0], 0x04, b'')
-                elif ppacket[1] == 0x04:
+    def on_receive(self,packet):
+        if packet.get_to_cuid()==self.get_cuid():
+            if packet.get_fonction_id() == cfg.FCT_INFO:
+                self.exec_callback(4, [packet.get_from_cuid(), packet.get_data()])
+                cfg.log("Info :" + str(packet.get_data()))
+            elif packet.get_fonction_id() == cfg.FCT_IAMNEW and self.is_server:
+                # I'M NEW
+                # TODO : CHANGE
+                if 1==1:
+                    return
+                cfg.log("Ask for CUID :" + str(packet.get_data()))
+                cursor = self.database.cursor()
+                cursor.execute("SELECT CUID from connections")
+                dat = cursor.fetchall()
+                cursor.close()
+                for i in range(0x01, 0xFF):
+                    if not i in dat:
+                        cursor = self.database.cursor()
+                        cursor.execute(
+                            "INSERT INTO connections (GUID,CUID) VALUES ('" + binascii.hexlify(packet.get_data()).decode(
+                                "ascii") + "'," + str(i) + ")")
+                        cursor.close()
+                        self.send(0xff, 0x02, i.to_bytes(1, "big"))
+                        break
+            elif packet.get_fonction_id() == cfg.FCT_GIVEDATA and self.is_server:
+                # MY SPEC
+                # TODO
+                pass
+            elif packet.get_fonction_id() == cfg.FCT_YOURETHIS and not self.is_server:
+                # YOU'RE THIS
+                # TODO : CHANGE
+                if 1==1:
+                    return
+                self.exec_callback(2, [packet.get_from_cuid(), packet.get_data()])
+                cfg.log("Ask for SPEC")
+                self.send(packet.get_from_cuid(), 0x04, b'')
+                """elif ppacket[1] == 0x04:
                     cfg.log("Give SPEC :" + str(ppacket[2]))
+
                 elif ppacket[1] == 0x10:
                     self.exec_callback(5, [ppacket[0], ppacket[2]])
                     cfg.log("Ask PREC")
@@ -331,69 +324,25 @@ class Communicator(threading.Thread):
                     cfg.log("Give PREC :" + str(ppacket[2]))
                 elif ppacket[1] == 0x20:
                     self.exec_callback(3, [ppacket[0], ppacket[2]])
-                    cfg.log("Ask DATA")
-                elif ppacket[1] == 0x21:
-                    cfg.log("Give DATA :" + str(ppacket[2]))
-                    prec = (int.from_bytes(ppacket[2][:1], "big") + 1) // 8
-                    vals = []
-                    for i in range(2):
-                        # suppose qu'il y a 2 chanels : besoin de db pour stocker les specs
-                        vals.append(int.from_bytes(ppacket[2][1 + (i * prec):1 + ((i + 1) * prec)], "big"))
-                    cfg.log(str(prec)+str(vals))
-        self.sock.close()
+                    cfg.log("Ask DATA")"""
+            elif packet.get_fonction_id()==cfg.FCT_GIVEDATA:
+                cfg.log("Give DATA :" + str(packet.get_data()))
+                vals = []
+                for i in range(2):
+                    # TODO : need DB to store device specs (simulating 2 channels)
+                    vals.append(int.from_bytes(packet.get_data()[1 + (i * cfg.DATA_VALUE_SIZE//8):1 + ((i + 1) * cfg.DATA_VALUE_SIZE//8)], "big"))
+                cfg.log(str(vals))
+                # TODO : NEED CALLBACK to give data
+
 
     def send(self, dest, fid, data=b''):
         """
-        Contruit et envoie un packet au server.
         :param dest: entier representant le cuid du destinataire
         :param fid: entier representant la fonction demandee
         :param data: bytes correspondants aux donnees formates pour la fonction (pas de verification avant envoi)
         :return: la reponse du server (peut prendre du temps)
         """
-        packet = dest.to_bytes(1, "big") + (0).to_bytes(1, "big") + fid.to_bytes(1, "big") + len(data).to_bytes(1,
-                                                                                                                "big") + data
-        packet += self.calculate_crc(packet)
-        self.send_raw(packet)
-
-    def send_raw(self, data):
-        self.sock.sendto(data, ('255.255.255.255', cfg.COMMUNICATION_PORT))
-
-    def calculate_crc(self, data):
-        return b''
-
-    def check_packet(self, packet, other_ip=None, alert=True):
-        parsed = self.parse_packet(packet)
-        if parsed:
-            if parsed[0] == 0xff or parsed[0] == self.communication_uid:
-                return parsed[1:-1]
-            return False
-        elif alert and other_ip:
-            self.tell_invalid_packet(parsed[0])
-        return False
-
-    def parse_packet(self, packet):
-        try:
-            tocuid = int.from_bytes(packet[:1], "big")
-            fromcuid = int.from_bytes(packet[1:2], "big")
-            fid = int.from_bytes(packet[2:3], "big")
-            datlen = int.from_bytes(packet[3:4], "big")
-            dat = packet[4:4 + datlen]
-            crc = packet[4 + datlen:]
-            final = [tocuid, fromcuid, fid, dat, crc]
-            cfg.log(final)
-            return final
-        except:
-            cfg.log("Parse error...")
-            return None
-
-    def tell_invalid_packet(self, cuid):
-        self.send(cuid, 0, (0x01).to_bytes(1, "big"))
-
-    def get_precision(self):
-        """
-        :return: 'self.server_precision'
-        """
-        return self.server_precision
+        self.sender.add_to_queue(Packet().create(self.get_cuid(),dest,fid,data).build())
 
     def stop(self):
         """
@@ -420,6 +369,8 @@ class Communicator(threading.Thread):
         """
         :return: 'self.communication_uid'
         """
+        if self.communication_uid is None:
+            return cfg.CUID_BROASCAST
         return self.communication_uid
 
 
