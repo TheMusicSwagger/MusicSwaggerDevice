@@ -1,2 +1,7 @@
 .idea*
 *__pycache__*
+*.toc
+*.log
+*.aux
+*~
+*synctex.gz

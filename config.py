@@ -5,6 +5,7 @@ SERVER_HOSTNAME="main-swag-machine"#"musicswagger_server"
 COMMUNICATION_PORT=55666
 # port du server
 DEBUG_MODE=True
+RAISE_ERROR=True
 # mode debug
 MAX_PACKET_SIZE=512
 # taille maximum d'un packet en bytes
@@ -19,7 +20,7 @@ def log(text):
         print("[---]",text)
 
 def warn(text):
-    if DEBUG_MODE:
+    if RAISE_ERROR:
         raise Exception(text)
     else:
         print("[!!!]",text)

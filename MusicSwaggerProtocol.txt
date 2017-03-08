@@ -33,6 +33,7 @@ Operations list :
             - 0x01 : Packet error
             - 0x02 : Invalid CUID
             - 0x03 : Not supposed to receive that
+            - 0x04 : I'm still alive ! (if not received for 1min : forgetting the device
 
     - 0x01 = IAMNEW :
         - When you start a device that needs a CUID to communicate over the network and give the specs

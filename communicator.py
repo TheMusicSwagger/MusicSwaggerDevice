@@ -19,6 +19,9 @@ class Packet(object):
     packed_data = None
     # bytes representing the actual packed raw data
 
+    def __str__(self):
+        return str(self.get_from_cuid()) + str(self.get_to_cuid()) + str(self.get_fonction_id()) + str(self.get_data())
+
     def create(self, from_cuid, to_cuid, fonction_id, data):
         self.set_from_cuid(from_cuid)
         self.set_to_cuid(to_cuid)
@@ -27,6 +30,7 @@ class Packet(object):
         return self
 
     def reconstruct(self, raw_packet):
+        cfg.log("Reading : "+str(raw_packet))
         try:
             self.set_to_cuid(int.from_bytes(raw_packet[:1], "big"))
             self.set_from_cuid(int.from_bytes(raw_packet[1:2], "big"))
@@ -36,10 +40,13 @@ class Packet(object):
             found_crc = int.from_bytes(raw_packet[4 + datlen:], "big")
             correct_crc = self.calculate_crc(raw_packet[:4 + datlen])
             if correct_crc != found_crc:
-                cfg.warn("CRC Error : " + str(found_crc) + "!=" + str(correct_crc) + "!")
-            cfg.log(self.get_from_cuid() + self.get_to_cuid() + self.get_fonction_id() + self.get_data())
+                cfg.warn("CRC Error : " + str(found_crc) + " != " + str(correct_crc) + " !")
+            else:
+                cfg.log("CRC correct : " + str(found_crc))
+            cfg.log("Found : "+str(self))
         except:
             cfg.warn("Parse error...")
+        return self
 
     def build(self):
         basic_packet_data = self.get_to_cuid().to_bytes(1, "big") + self.get_from_cuid().to_bytes(1,
@@ -56,6 +63,7 @@ class Packet(object):
         if self.packed_data is None:
             self.build()
         sock.sendto(self.get_packed_data(), ('255.255.255.255', cfg.COMMUNICATION_PORT))
+        cfg.log("Sending : "+str(self.get_packed_data()))
         return self
 
     def calculate_crc(self, data):
@@ -98,19 +106,96 @@ class Packet(object):
 
 
 class Sender(threading.Thread):
+    sock=None
+    # socket used to send packets
+
+    is_running=None
+    # the status of the sender (allows to stop it)
+    
     def __init__(self):
         super(Sender, self).__init__()
+        self.is_running=True
+
 
     def run(self):
-        pass
+        while self.is_running:
+            pass
+
+    def kill(self):
+        """
+        Kill the Thread.
+        """
+        self.is_running = False
 
 
 class Receiver(threading.Thread):
+    sock=None
+    # socket used to receive incomming packets
+
+    is_running=None
+    # the status of the receiver (allows to stop it)
+
     def __init__(self):
         super(Receiver, self).__init__()
+        self.is_running=True
 
     def run(self):
-        pass
+        while self.is_running:
+            raw_data, address = self.sock.recvfrom(cfg.MAX_PACKET_SIZE)
+            packet=Packet().reconstruct(raw_data)
+            cfg.log(packet)
+            if 1==1:
+                break
+            ppacket = None
+            if ppacket:
+                if ppacket[1] == 0x00:
+                    self.exec_callback(4, [ppacket[0], ppacket[2]])
+                    cfg.log("Info :" + str(ppacket[2]))
+                elif ppacket[1] == 0x01:
+                    cfg.log("Ask for CUID :" + str(ppacket[2]))
+                    cursor = self.database.cursor()
+                    cursor.execute("SELECT CUID from connections")
+                    dat = cursor.fetchall()
+                    cursor.close()
+                    for i in range(0x01, 0xFF):
+                        if not i in dat:
+                            cursor = self.database.cursor()
+                            cursor.execute(
+                                "INSERT INTO connections (GUID,CUID) VALUES ('" + binascii.hexlify(ppacket[2]).decode(
+                                    "ascii") + "'," + str(i) + ")")
+                            cursor.close()
+                            self.send(0xff, 0x02, i.to_bytes(1, "big"))
+                            break
+                elif ppacket[1] == 0x03:
+                    self.exec_callback(2, [ppacket[0], ppacket[2]])
+                    cfg.log("Ask for SPEC")
+                    self.send(ppacket[0], 0x04, b'')
+                elif ppacket[1] == 0x04:
+                    cfg.log("Give SPEC :" + str(ppacket[2]))
+                elif ppacket[1] == 0x10:
+                    self.exec_callback(5, [ppacket[0], ppacket[2]])
+                    cfg.log("Ask PREC")
+                    self.send(ppacket[0], 0x11, b'\x0f')
+                elif ppacket[1] == 0x11:
+                    cfg.log("Give PREC :" + str(ppacket[2]))
+                elif ppacket[1] == 0x20:
+                    self.exec_callback(3, [ppacket[0], ppacket[2]])
+                    cfg.log("Ask DATA")
+                elif ppacket[1] == 0x21:
+                    cfg.log("Give DATA :" + str(ppacket[2]))
+                    prec = (int.from_bytes(ppacket[2][:1], "big") + 1) // 8
+                    vals = []
+                    for i in range(2):
+                        # suppose qu'il y a 2 chanels : besoin de db pour stocker les specs
+                        vals.append(int.from_bytes(ppacket[2][1 + (i * prec):1 + ((i + 1) * prec)], "big"))
+                    cfg.log(str(prec)+str(vals))
+        self.sock.close()
+
+    def kill(self):
+        """
+        Kill the Thread.
+        """
+        self.is_running = False
 
 
 class Communicator(threading.Thread):
@@ -188,7 +273,7 @@ class Communicator(threading.Thread):
             # databases setup
             try:
                 self.database = pymysql.connect(cfg.DB_IP, cfg.DB_USER, cfg.DB_PASS, cfg.DB_NAME)
-            except:
+            except pymysql.err.Error:
                 cfg.warn("Database setup error !")
         else:
             # connection setup if
@@ -339,8 +424,16 @@ class Communicator(threading.Thread):
 
 
 if __name__ == "__main__":
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    sock.bind(('', cfg.COMMUNICATION_PORT))
+    mypack=Packet().create(0,0,0,b'HELLO').send(sock)
+    Packet().reconstruct(sock.recvfrom(1024)[0])
+    """
     guid = ""
     file = open("guid")
     a = Communicator(file.read().replace("\n", ""))
     file.close()
     a.join()
+    """
