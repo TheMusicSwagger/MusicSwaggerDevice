@@ -20,7 +20,7 @@
 		\vspace{1.5cm}
 		{\huge\bfseries The Music Swagger :\par De la musique interactive\par}
 		\vspace{2cm}
-		{\Large\itshape Estelle FIKET\\Thomas POTIER\\Nour Boulahcen\par}
+		{\Large\itshape Estelle FIKET\\Thomas POTIER\\Nour BOULAHCEN\par}
 		\vfill
 		encadré par\par
 		Mr. Bernigole
@@ -32,9 +32,17 @@
 	\tableofcontents
 	\newpage
 	\section{L'idée}
-	\subsection{Les interactions physiques au cœur du projet}
-	\subsubsection{Les capteurs}
-	\subsection{Mobilité et facilité d'utilisation}
-	\subsection{Des effets sonores intéressants}
+	L'idée du projet est de produire un système permettant grace à des capteurs physiques (tels que gyroscope, mètres ultrasons, ou encore photodiodes), de créer et faire varier des sons afin de générer un son. Nous avons opter pour un système de liaison par wi-fi, et des "devices" à base de Raspberry Pi Zero W pour la portabilité et le prix. Une interface Web sera mise en place afin de pouvoir configurer le comportement de façon simple et sans besoin d'application particulière. Nous avons choisis d'utiliser Python3 pour la plupart des parties pour sa simplicité, sa portabilité ainsi que la richesse de ses modules. L'interface Web est composée de PHP pour l'interaction avec la base de donnée et l'HTML, JS et CSS pour la mise en forme et les interactions avec l'utilisateur (notamment avec le système de "Nodes" en "drag\&drop").
+	\subsection{Les différentes parties}
+	\subsubsection{Le "brain"}
+	C'est une partie simple mais c'est la plus centrale du projet, qui organise les services et gère le programme du "server".
+	\subsubsection{Les "devices"}
+	C'est la partie englobant tout les capteurs. Elle communique avec le "brain" grâce à un "communicator" (interface de transfert de donnée par réseau (wifi/ethernet)).
+	\subsubsection{Le "server"}
+	C'est la partie qui permet de générer le son, la réelle partie qui met en forme et concrétise le projet. Elle a un accès à la base de donnée du "configurator" pour se contrôler
+	\subsubsection{Le "configurator"}
+	C'est l'interface Web basé sur un serveur apache, indépendante du reste du projet par son language (différent de python). Elle communique ses données grâce à une base de donnée. 
 	\section{La mise en place}
+	\subsection{Répartition}
+	Thomas s'est chargé de la partie "device" et "communicator", car il avait déjà des connaissances sur le fonctionnement d'un réseau. Estelle et Nour se sont occupés de la partie "configurator", car ils ont apprécié les projets Web en classe.
 \end{document}

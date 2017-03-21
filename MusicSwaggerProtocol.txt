@@ -15,6 +15,10 @@ Data representation :
     - DATA : the actual data of the packet, formatted as the OP requires to
     (- CRC)
 
+Constants :
+    - DATA_VALUE_SIZE = 0x20
+    -
+
 Operations list :
     - OP NUM = OP NAME :
         - Description...
@@ -43,9 +47,11 @@ Operations list :
 
 
     - 0x02 = YOURETHIS :
-        - Server response to a 0x01 (give server specs and CUID)
-        | CUID |
-        | (8b) |
+        - Server response to a 0x01 (give CUID)
+        | GUID   | CUID |
+        | (128b) | (8b) |
+        - GUID :
+            The GUID of the device
         - CUID :
             The new CUID of the device
 
@@ -58,11 +64,11 @@ Operations list :
         - NLEN :
             The length of the device name
         - DLEN :
-            The length of the description in bits
+            The length of the description
         - NAME :
-            The name of the device
+            The name of the device (utf8)
         - DESC :
-            The description of the device
+            The description of the device (utf8)
 
 
     - 0x10 = GIVE DATA
