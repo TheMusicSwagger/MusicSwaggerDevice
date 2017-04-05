@@ -11,7 +11,7 @@ Data representation :
     - DESTination Connection Unique Identifier : the CUID of the destination of the packet (0x00 is the server, 0xff is no one particularly)
     - SouRCe CUID : the CUID of the source of the packet
     - OPeration NUMber : number describing which operation is given
-    - DATA LENgth : the size of the data followiENSng in bytes
+    - DATA LENgth : the size of the data following in bytes
     - DATA : the actual data of the packet, formatted as the OP requires to
     (- CRC)
 
@@ -29,14 +29,17 @@ Operations list :
 
     - 0x00 = INFO :
         - Generally for server response, give some info about the situation
-        | ID  |
-        | (8b)|
+        | ID  | INFO |
+        | (8b)| (...)|
         - ID :
             - 0x00 : Nothing to say
             - 0x01 : Packet error
             - 0x02 : Invalid CUID
             - 0x03 : Not supposed to receive that
-            - 0x04 : I'm still alive ! (if not received for 1min : forgetting the device
+            # - 0x04 : I'm still alive ! (if not received for 1min : forgetting the device)
+            # TODO
+        - INFO :
+            Some text about the situation (ASCII).
 
     - 0x01 = IAMNEW :
         - When you start a device that needs a CUID to communicate over the network
@@ -72,8 +75,11 @@ Operations list :
 
 
     - 0x10 = GIVE DATA
-        - When device need to give data to server
+        - When device need to give data to server (can't work before a MYSPEC packet)
         | CHAN1            | ... |
         | (DATA_VALUE_SIZE)| ... |
         - CHAN1, ... :
             The values of each chanel
+
+    - 0x20 = GOODBYE
+        - Before the device is turned off

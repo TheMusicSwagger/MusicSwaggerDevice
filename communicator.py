@@ -27,7 +27,7 @@ class Packet(object):
     def __str__(self):
         return "from_cuid="+str(self.get_from_cuid()) + ", to_cuid=" + str(self.get_to_cuid()) + ", fct_id=" + str(self.get_fonction_id()) + ", data=" + utls.bytes_to_hex_string(self.get_data())
 
-    def create(self, from_cuid, to_cuid, fonction_id, data):
+    def create(self, from_cuid, to_cuid, fonction_id, data=b''):
         self.set_from_cuid(from_cuid)
         self.set_to_cuid(to_cuid)
         self.set_fonction_id(fonction_id)
@@ -81,7 +81,12 @@ class Packet(object):
                         cfg.log("Not a correct interface : "+str(iface))
                 if broad_ip is None:
                     raise Exception("No interface available !")
-                sock.sendto(self.get_packed_data(), (broad_ip, cfg.COMMUNICATION_PORT))
+                if self.to_cuid!=cfg.CUID_SERVER or self.to_cuid==cfg.CUID_BROASCAST:
+                    sock.sendto(self.get_packed_data(), (broad_ip, cfg.COMMUNICATION_PORT_DEVICE))
+                if self.to_cuid==cfg.CUID_SERVER or self.to_cuid==cfg.CUID_BROASCAST:
+                    sock.sendto(self.get_packed_data(), (broad_ip, cfg.COMMUNICATION_PORT_SERVER))
+
+
                 return True
             except Exception as e:
                 cfg.warn("Network error : "+"".join(e.args))
@@ -133,6 +138,17 @@ class Packet(object):
         self.create(from_cuid,cfg.CUID_SERVER,cfg.FCT_GIVEDATA,packed_data)
         return self
 
+    def give_info_packet(self,from_cuid,to_cuid,data):
+        self.create(from_cuid,to_cuid,cfg.FCT_INFO,data)
+        return self
+
+    def give_goodbye_packet(self,from_cuid):
+        if from_cuid==cfg.CUID_SERVER:
+            self.create(from_cuid, cfg.CUID_BROASCAST, cfg.FCT_GOODBYE)
+        else:
+            self.create(from_cuid, cfg.CUID_SERVER, cfg.FCT_GOODBYE)
+        return self
+
     def give_spec_packet(self,from_cuid,nchans,name,desc):
         bname,bdesc=name.encode("uft8"),desc.encode("uft8")
         packed_data=nchans.to_bytes(1,"big")+len(bname).to_bytes(1,"big")+len(bdesc).to_bytes(1,"big")+bname+bdesc
@@ -173,6 +189,7 @@ class Sender(threading.Thread):
                 if len(self.queue)>0:
                     current_packet=self.queue.pop(0)
                     self.is_running=current_packet.send(self.sock)
+                    cfg.log("Sending : " + binascii.hexlify(current_packet.get_packed_data()).decode("ascii"))
                 else:
                     time.sleep(0.01)
         finally:
@@ -226,7 +243,7 @@ class Receiver(threading.Thread):
             while self.is_running:
                 raw_data, address = self.sock.recvfrom(cfg.MAX_PACKET_SIZE)
                 packet=Packet().reconstruct(raw_data)
-                cfg.log("Received : "+str(packet))
+                cfg.log("Received : "+str(packet)+" : "+binascii.hexlify(raw_data).decode("ascii"))
                 self.callback(packet)
         finally:
             self.kill()
@@ -241,7 +258,7 @@ class Receiver(threading.Thread):
 
 class Communicator(object):
     # constants
-    AVAILABLE_CALLBACKS = ["call_error", "call_unknown_packet", "call_ask_spec", "call_info"]
+    AVAILABLE_CALLBACKS = ["error", "info", "stop", "data"]
 
     sock = None
     # socket udp to communicate data
@@ -274,21 +291,24 @@ class Communicator(object):
         super(Communicator, self).__init__()
 
         # setting up
-        self.callbacks = [ka.get(callid) for callid in self.AVAILABLE_CALLBACKS]
+        self.callbacks = dict([(callid,ka.get(callid)) for callid in self.AVAILABLE_CALLBACKS])
+
+        self.is_server = is_server
+        self.global_uid = guid
 
         # setting network
         try:
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-            self.sock.bind(('', cfg.COMMUNICATION_PORT))
+            port=cfg.COMMUNICATION_PORT_DEVICE
+            if self.is_server:
+                port = cfg.COMMUNICATION_PORT_SERVER
+            self.sock.bind(('', port))
             self.address = self.sock.getsockname()
             cfg.log("Listening on" + str(self.address))
         except:
             cfg.warn("Socket setup error !")
-
-        self.is_server = is_server
-        self.global_uid = guid
 
         self.sender=Sender(self.sock)
         self.receiver = Receiver(lambda p:self.on_receive(p),self.sock)
@@ -297,7 +317,7 @@ class Communicator(object):
             self.communication_uid = cfg.CUID_SERVER
             # databases setup
             try:
-                self.database = pymysql.connect(cfg.DB_IP, cfg.DB_USER, cfg.DB_PASS, cfg.DB_NAME)
+                self.database = pymysql.connect(host=cfg.DB_IP, user=cfg.DB_USER, password=cfg.DB_PASS, db=cfg.DB_NAME,charset=cfg.DB_CHARSET)
             except pymysql.err.Error:
                 cfg.warn("Database setup error !")
         else:
@@ -323,42 +343,55 @@ class Communicator(object):
         self.send(cfg.CUID_SERVER,0x01,packed_data)
         # to server : IAMNEW
 
+    def db_query(self,query,args=()):
+        cursor = self.database.cursor(True)
+        cursor.execute(query,args)
+        dat = cursor.fetchall()
+        cursor.close()
+        self.database.commit()
+        return dat
+
     def on_receive(self,packet):
         if packet.get_to_cuid()==self.get_cuid() or packet.get_to_cuid()==cfg.CUID_BROASCAST:
             if packet.get_fonction_id() == cfg.FCT_INFO:
                 #self.exec_callback(4, [packet.get_from_cuid(), packet.get_data()])
-                cfg.log("Info :" + packet.get_data().decode("ascii"))
+                cfg.log("Info : " + packet.get_data().decode("ascii"))
             elif packet.get_fonction_id() == cfg.FCT_IAMNEW and self.is_server:
                 # I'M NEW
                 other_guid=binascii.hexlify(packet.get_data()).decode("ascii")
                 cfg.log("I'M NEW : "+str(other_guid))
                 # finding new CUID
-                # TODO : MAKE THE DB WORKING
                 if self.database is not None:
-                    cursor = self.database.cursor()
-                    cursor.execute("SELECT CUID from connections")
-                    dat = cursor.fetchall()
+                    self.db_query("DELETE FROM "+cfg.TB_CONNECTIONS+" WHERE GUID=%s",(other_guid))
+                    dat=self.db_query("SELECT CUID FROM "+cfg.TB_CONNECTIONS)
                     cfg.log("Already used CUIDs : "+str(dat))
-                    cursor.close()
+                    is_ok=True
+                    possible_cuid=0
                     for possible_cuid in cfg.CUID_LIST_USABLE:
-                        if not possible_cuid in dat:
-                            # if CUID found -> register and send it
-                            found_cuid=possible_cuid
-                            cursor = self.database.cursor()
-                            cursor.execute(
-                                "INSERT INTO connections (GUID,CUID) VALUES ('" + other_guid + "'," + str(found_cuid) + ")")
-                            cursor.close()
-                            # registered
-                            self.send(cfg.CUID_BROASCAST, cfg.FCT_YOURETHIS, binascii.unhexlify(other_guid) + found_cuid.to_bytes(1, "big"))
-                            # sent
+                        is_ok = True
+                        for p in dat:
+                            if possible_cuid in p:
+                                is_ok=False
+                        if is_ok:
                             break
+                    if is_ok:
+                        cfg.log("Found : " + str(possible_cuid))
+                        # if CUID found -> register and send it
+                        found_cuid=possible_cuid
+                        self.db_query("INSERT INTO "+cfg.TB_CONNECTIONS+" (GUID, CUID) VALUES (%s, %s)",(other_guid, found_cuid))
+                        # registered
+                        self.send(cfg.CUID_BROASCAST, cfg.FCT_YOURETHIS, binascii.unhexlify(other_guid) + found_cuid.to_bytes(1, "big"))
+                        # sent
+                    else:
+                        cfg.warn("No usable CUID found !")
                 else:
                     self.send(cfg.CUID_BROASCAST, cfg.FCT_YOURETHIS,
                               binascii.unhexlify(other_guid) + (2).to_bytes(1, "big"))
             elif packet.get_fonction_id() == cfg.FCT_YOURETHIS and not self.is_server:
                 # YOU'RE THIS
-                cfg.log("YOU'RE THIS "+utls.bytes_to_hex_string(binascii.hexlify(packet.get_data())[:cfg.SIZE_GUID])+"|"+self.get_guid())
-                if utls.bytes_to_hex_string(binascii.hexlify(packet.get_data())[:cfg.SIZE_GUID])==self.get_guid():
+                #cfg.log("YOU'RE THIS "+utls.bytes_to_hex_string(binascii.hexlify(packet.get_data()[:cfg.SIZE_GUID]))+" - "+utls.bytes_to_hex_string(binascii.hexlify(packet.get_data()[cfg.SIZE_GUID:])))
+                cfg.log(utls.bytes_to_hex_string(binascii.hexlify(packet.get_data()[:cfg.SIZE_GUID]))+" == "+self.get_guid()+" -> "+str(utls.bytes_to_hex_string(binascii.hexlify(packet.get_data()[:cfg.SIZE_GUID]))==self.get_guid()))
+                if utls.bytes_to_hex_string(binascii.hexlify(packet.get_data()[:cfg.SIZE_GUID]))==self.get_guid():
                     my_new_cuid=int.from_bytes(packet.get_data()[cfg.SIZE_GUID:],"big")
                     cfg.log("YOU'RE THIS : " +str(my_new_cuid))
                     self.set_cuid(my_new_cuid)
@@ -367,6 +400,10 @@ class Communicator(object):
             elif packet.get_fonction_id()==cfg.FCT_GIVEDATA and self.is_server:
                 # GIVE DATA
                 cfg.log("Give DATA :" + str(packet))
+                if self.db_query("SELECT inited FROM "+cfg.TB_CONNECTIONS)[0][0]==0:
+                    cfg.log("Device not initialized !")
+                    return
+
                 vals = []
                 for i in range(2):
                     # TODO : need DB to store device specs (simulating 2 channels)
@@ -376,15 +413,33 @@ class Communicator(object):
             elif packet.get_fonction_id()==cfg.FCT_MYSPEC and self.is_server:
                 # MY SPEC
                 cfg.log("Give MYSPEC :" + str(packet))
-
-
+                # | NCHAN | NLEN | DLEN | NAME   | DESC   |
+                # | (8b)  | (8b) | (8b) | (NLENb)| (DLENb)|
+                nchan=int.from_bytes(packet.get_data()[:8],"big")
+                nlen=int.from_bytes(packet.get_data()[8:16],"big")
+                dlen=int.from_bytes(packet.get_data()[16:24],"big")
+                name=""
+                desc=""
+                for i in range(nlen):
+                    name+=packet.get_data()[24+i,24+1+i]
+                for i in range(dlen):
+                    desc+=packet.get_data()[24+nlen+i,24+1+nlen+i]
+                self.db_query("UPDATE "+cfg.TB_CONNECTIONS+" SET inited=%s WHERE CUID=%s",(1,packet.get_from_cuid()))
+                self.db_query("INSERT INTO "+cfg.TB_SPECIFICATIONS+" (numchan,name,description) VALUE (%s,%s,%s)",(nchan,name,desc))
+            elif packet.get_fonction_id()==cfg.FCT_GOODBYE:
+                # GOODBYE
+                cfg.log("Give GOODBYE :" + str(packet))
+                if self.is_server:
+                    self.db_query("DELETE FROM " + cfg.TB_CONNECTIONS + " WHERE CUID=%s", (packet.get_from_cuid()))
+                else:
+                    #self.callbacks['stop']()
+                    pass
 
     def send(self, dest, fid, data=b''):
         """
         :param dest: entier representant le cuid du destinataire
         :param fid: entier representant la fonction demandee
         :param data: bytes correspondants aux donnees formates pour la fonction (pas de verification avant envoi)
-        :return: la reponse du server (peut prendre du temps)
         """
         self.sender.add_to_queue(Packet().create(self.get_cuid(),dest,fid,data).build())
 
@@ -393,7 +448,8 @@ class Communicator(object):
         Stoppe le thread du server.
         """
         self.receiver.kill()
-        self.sender.add_to_queue(Packet().create(self.get_cuid(),cfg.CUID_BROASCAST,cfg.FCT_INFO,b"Terminating receiver !"))
+        self.give_goodbye()
+        self.give_info(b"Terminating receiver !")
         # send an useless packet to make receiver receive it and then break the loop
         #self.receiver.join()
         self.sender.kill()
@@ -428,10 +484,17 @@ class Communicator(object):
         self.communication_uid=cuid
 
     def give_data_packet(self,data):
-        self.sender.add_to_queue(Packet().give_data_packet(self.communication_uid,data))
+        self.sender.add_to_queue(Packet().give_data_packet(self.get_cuid(),data))
 
     def give_my_spec(self,nchans,name,desc):
-        self.sender.add_to_queue(Packet().give_spec_packet(self.communication_uid,nchans,name,desc))
+        self.sender.add_to_queue(Packet().give_spec_packet(self.get_cuid(),nchans,name,desc))
+
+    def give_info(self,info):
+        self.sender.add_to_queue(Packet().give_info_packet(self.get_cuid(),cfg.CUID_BROASCAST,info))
+
+    def give_goodbye(self):
+        self.sender.add_to_queue(Packet().give_goodbye_packet(self.get_cuid()))
+
 
 if __name__ == "__main__":
     a=None
@@ -441,8 +504,7 @@ if __name__ == "__main__":
         guid=file.read().replace("\n", "")
         file.close()
         a = Communicator(guid,cfg.IS_SERVER)
-        print(len(a.get_guid()))
-        while True:continue
+        #while True:continue
     finally:
         a.stop()
     """#"""
