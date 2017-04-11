@@ -1,4 +1,4 @@
-import time, random, threading, uuid, os, socket,binascii
+import time, random, threading, uuid, os, socket, binascii
 import config as cfg
 
 GPIO = None
@@ -19,6 +19,7 @@ class Device(object):
     chanels = None
     # liste de 'SensorValue' representant les dernieres valeurs enregistrees
     status = None
+
     # chaine de caractere definissant le statut actuel du device
 
     def __init__(self):
@@ -49,7 +50,7 @@ class Device(object):
         :param precision: entier tel que 0<=value<=2**'precision'-1
         :return: 'get_formated_values(new_format)' de chaque 'SensorValue' de 'self.chanels'
         """
-        new_format=[0,2**precision-1]
+        new_format = [0, 2 ** precision - 1]
         return [val.get_formated_values(new_format) for val in self.chanels]
 
     def refresh(self):
@@ -81,7 +82,7 @@ class ThreadedDevice(Device, threading.Thread):
     # fonction potentiellement donnee au device qui sera appelee lors du rafraichissement si differente de 'None' (avec l'objet en argument)
     def __init__(self, callback, refresh_interval):
         super(ThreadedDevice, self).__init__()
-        #self.daemon = True
+        # self.daemon = True
         # ferme le Thread quand le programme principal se termine
         self.refresh_interval = refresh_interval
         self.callback = callback
@@ -126,11 +127,12 @@ class ThreadedDevice(Device, threading.Thread):
         if self.callback:
             self.callback(self)
 
-    def set_refresh_interval(self,refresh_interval):
+    def set_refresh_interval(self, refresh_interval):
         """
         :param refresh_interval: Voir 'self.refresh_interval'
         """
-        self.refresh_interval=refresh_interval
+        self.refresh_interval = refresh_interval
+
 
 class DeviceChanel(object):
     """
@@ -139,6 +141,7 @@ class DeviceChanel(object):
     value_range = None
     # liste de deux elements representant intervalle de valeurs possibles
     last_value = None
+
     # entier representant la valeur actuelle du sensor
 
     def __init__(self, value_range):
@@ -180,6 +183,7 @@ class DeviceChanel(object):
 class MyRandom2Device(ThreadedDevice):
     num_of_chanels = 2
     chanels = [DeviceChanel([-100, 100]) for i in range(num_of_chanels)]
+
     def __init__(self, callback=None, refresh_interval=1000):
         super(MyRandom2Device, self).__init__(callback, refresh_interval)
         self.status = "Started !"
@@ -232,31 +236,32 @@ class HCSR04UltrasonicGPIOSensor(ThreadedDevice):
         GPIO.cleanup()
         super(HCSR04UltrasonicGPIOSensor, self).kill()
 
+
 class Communicator(object):
-    communication_uid=None
+    communication_uid = None
     # uid court donne par le server
-    sock=None
+    sock = None
     # socket udp permettant l'envoi et la reception de donnees
-    global_uid=None
+    global_uid = None
     # voir 'Brain.global_uid'
-    server_precision=None
+    server_precision = None
+
     # correspond a la precision attendue par le server
-    def __init__(self,global_uid):
-        self.global_uid=global_uid
-        self.sock=socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.sock.bind(('',cfg.SERVER_PORT+1))
+    def __init__(self, global_uid):
+        self.global_uid = global_uid
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.bind(('', cfg.SERVER_PORT + 1))
         self.sock.settimeout(1)
         # maximum d'attente pour recevoir des donnees (en secondes)
         try:
             socket.gethostbyname(cfg.SERVER_HOSTNAME)
             # verification de la presence du server sur le reseau
         except socket.gaierror as e:
-            cfg.log("Can't find server !!!",e)
+            cfg.log("Can't find server !!!", e)
         self.ask_for_cuid()
         self.ask_for_precision()
 
-
-    def send(self,dest,fid,data=b''):
+    def send(self, dest, fid, data=b''):
         """
         Contruit et envoie un packet au server.
         :param dest: entier representant le cuid du destinataire
@@ -264,11 +269,12 @@ class Communicator(object):
         :param data: bytes correspondants aux donnees formates pour la fonction (pas de verification avant envoi)
         :return: la reponse du server (peut prendre du temps)
         """
-        tcuid=self.communication_uid
-        if self.communication_uid==None:
-            tcuid=0xff
-        packet=dest.to_bytes(1,"big")+tcuid.to_bytes(1,"big")+fid.to_bytes(1,"big")+len(data).to_bytes(1,"big")+data
-        packet+=self.calculate_crc(packet)
+        tcuid = self.communication_uid
+        if self.communication_uid == None:
+            tcuid = 0xff
+        packet = dest.to_bytes(1, "big") + tcuid.to_bytes(1, "big") + fid.to_bytes(1, "big") + len(data).to_bytes(1,
+                                                                                                                  "big") + data
+        packet += self.calculate_crc(packet)
         self.send_raw(packet)
         try:
             return self.sock.recvfrom(cfg.MAX_PACKET_SIZE)[0]
@@ -276,18 +282,18 @@ class Communicator(object):
             cfg.log("No response...")
             return None
 
-    def send_raw(self,data):
-        self.sock.sendto(data,(cfg.SERVER_HOSTNAME,cfg.SERVER_PORT))
+    def send_raw(self, data):
+        self.sock.sendto(data, (cfg.SERVER_HOSTNAME, cfg.SERVER_PORT))
 
-    def calculate_crc(self,data):
+    def calculate_crc(self, data):
         return b''
 
-    def check_packet(self,packet,alert=True):
-        parsed=self.parse_packet(packet)
+    def check_packet(self, packet, alert=True):
+        parsed = self.parse_packet(packet)
         if parsed:
             if parsed[0] == 0xff:
                 return parsed[1:-1]
-            if parsed[0]==self.get_cuid():
+            if parsed[0] == self.get_cuid():
                 return parsed[1:-1]
             elif alert:
                 self.tell_invalid_cuid()
@@ -296,46 +302,44 @@ class Communicator(object):
             self.tell_invalid_packet()
         return False
 
-    def parse_packet(self,packet):
+    def parse_packet(self, packet):
         try:
-            tocuid=int.from_bytes(packet[:1],"big")
-            fromcuid=int.from_bytes(packet[1:2],"big")
-            fid=int.from_bytes(packet[2:3],"big")
-            datlen=int.from_bytes(packet[3:4],"big")
-            dat=packet[4:4+datlen]
-            crc=packet[4+datlen:]
-            final=[tocuid,fromcuid,fid,dat,crc]
+            tocuid = int.from_bytes(packet[:1], "big")
+            fromcuid = int.from_bytes(packet[1:2], "big")
+            fid = int.from_bytes(packet[2:3], "big")
+            datlen = int.from_bytes(packet[3:4], "big")
+            dat = packet[4:4 + datlen]
+            crc = packet[4 + datlen:]
+            final = [tocuid, fromcuid, fid, dat, crc]
             cfg.log(final)
             return final
         except:
-            cfg.log("Parse error...",packet)
+            cfg.log("Parse error...", packet)
             return None
 
     def ask_for_cuid(self):
-        if self.communication_uid==None:
-            suc=self.check_packet(self.send(0,0x01,binascii.unhexlify(self.get_guid())))
+        if self.communication_uid == None:
+            suc = self.check_packet(self.send(0, 0x01, binascii.unhexlify(self.get_guid())))
             if suc:
-                self.communication_uid=int.from_bytes(suc[2],"big")
+                self.communication_uid = int.from_bytes(suc[2], "big")
                 cfg.log(self.communication_uid)
             else:
                 cfg.log("CUID reception error !")
 
-
     def ask_for_precision(self):
-        if self.server_precision==None:
-            suc=self.check_packet(self.send(0,0x10))
+        if self.server_precision == None:
+            suc = self.check_packet(self.send(0, 0x10))
             if suc:
-                self.server_precision=int.from_bytes(suc[2],"big")
+                self.server_precision = int.from_bytes(suc[2], "big")
                 cfg.log(self.server_precision)
             else:
                 cfg.log("PREC reception error !")
 
-
     def tell_invalid_cuid(self):
-        self.send(0,0,(2).to_bytes(1,"big"))
+        self.send(0, 0, (2).to_bytes(1, "big"))
 
     def tell_invalid_packet(self):
-        self.send(0,0,(1).to_bytes(1,"big"))
+        self.send(0, 0, (1).to_bytes(1, "big"))
 
     def get_guid(self):
         """
@@ -356,32 +360,32 @@ class Communicator(object):
         return self.server_precision
 
 
-
 class Brain(object):
-    global_uid=None
+    global_uid = None
     # chaine de caractere unique "persistante" permettant d'indentifier un device
-    communication_id=None
+    communication_id = None
     # chaine de caractere unique courte donnee par le server a la connection du device
-    device=None
+    device = None
     # correspond au device
-    communicator=None
+    communicator = None
     # correspond au communicator
-    server_precision=None
+    server_precision = None
+
     # correspond a la precision attendue par le server
     def __init__(self):
         if os.path.isfile(cfg.GUID_FILENAME):
-            guidfile=open(cfg.GUID_FILENAME,"r")
-            self.global_uid=guidfile.read()
+            guidfile = open(cfg.GUID_FILENAME, "r")
+            self.global_uid = guidfile.read()
             guidfile.close()
         else:
-            guidfile=open(cfg.GUID_FILENAME,"w")
-            self.global_uid=str(uuid.uuid4()).replace("-","")
+            guidfile = open(cfg.GUID_FILENAME, "w")
+            self.global_uid = str(uuid.uuid4()).replace("-", "")
             guidfile.write(self.global_uid)
             guidfile.close()
         cfg.log(self.get_guid())
-        self.communicator=Communicator(self.get_guid())
-        self.server_precision=self.communicator.get_precision()
-        self.device=MyRandom2Device(self.send_data_to_serv)
+        self.communicator = Communicator(self.get_guid())
+        self.server_precision = self.communicator.get_precision()
+        self.device = MyRandom2Device(self.send_data_to_serv)
 
     def get_guid(self):
         """
@@ -389,14 +393,17 @@ class Brain(object):
         """
         return self.global_uid
 
-    def send_data_to_serv(self,device):
-        if self.server_precision!=None:
+    def send_data_to_serv(self, device):
+        if self.server_precision != None:
             cfg.log(device.get_formated_values(self.server_precision))
-            data=self.server_precision.to_bytes(1,"big")+b''.join([val.to_bytes((self.server_precision+1)//8,"big") for val in device.get_formated_values(self.server_precision)])
-            self.communicator.send(0,0x21,data)
+            data = self.server_precision.to_bytes(1, "big") + b''.join(
+                [val.to_bytes((self.server_precision + 1) // 8, "big") for val in
+                 device.get_formated_values(self.server_precision)])
+            self.communicator.send(0, 0x21, data)
+
 
 if __name__ == "__main__":
     try:
-        brain=Brain()
+        brain = Brain()
     except KeyboardInterrupt as e:
         print("Exiting...")
