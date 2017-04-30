@@ -152,7 +152,7 @@ class Packet(object):
         return self
 
     def give_spec_packet(self, from_cuid, nchans, name, desc):
-        bname, bdesc = name.encode("uft8"), desc.encode("uft8")
+        bname, bdesc = name.encode(), desc.encode()
         packed_data = nchans.to_bytes(1, "big") + len(bname).to_bytes(1, "big") + len(bdesc).to_bytes(1,
                                                                                                       "big") + bname + bdesc
         self.create(from_cuid, cfg.CUID_SERVER, cfg.FCT_MYSPEC, packed_data)
@@ -176,12 +176,12 @@ class Sender(threading.Thread):
         self.sock = sock
         self.queue = []
 
-        self.daemon = False
+        self.daemon = True
         # not waiting thread to stop before exiting program
-
 
         self.start()
         # starting the Thread
+        cfg.log("Sender started !")
 
     def run(self):
         """
@@ -197,7 +197,6 @@ class Sender(threading.Thread):
                     time.sleep(0.01)
         finally:
             self.kill()
-            cfg.log("Sender killed !")
 
     def add_to_queue(self, packet):
         """
@@ -212,6 +211,7 @@ class Sender(threading.Thread):
         Kill the Thread.
         """
         self.is_running = False
+        cfg.log("Sender killed !")
         return self
 
 
@@ -233,11 +233,12 @@ class Receiver(threading.Thread):
         self.callback = callback
         self.sock = sock
 
-        self.daemon = False
+        self.daemon = True
         # not waiting thread to stop before exiting program
 
         self.start()
         # starting the Thread
+        cfg.log("Receiver started !")
 
     def run(self):
         """
@@ -251,13 +252,15 @@ class Receiver(threading.Thread):
                 self.callback(packet)
         finally:
             self.kill()
-            cfg.log("Receiver killed !")
 
     def kill(self):
         """
         Kill the Thread.
         """
         self.is_running = False
+        cfg.log("Receiver killed !")
+        return self
+
 
 
 class Communicator(object):
@@ -289,9 +292,9 @@ class Communicator(object):
 
     # cuid value
 
-    def __init__(self, guid, is_server=False, **ka):
+    def __init__(self, guid, is_server=cfg.IS_SERVER, **ka):
         """
-        :param cuid: You can force cuid (for server)
+        :param guid: the guid of the device
         """
         super(Communicator, self).__init__()
 
@@ -350,7 +353,7 @@ class Communicator(object):
         # to server : IAMNEW
 
     def db_query(self, query, args=()):
-        cursor = self.database.cursor(True)
+        cursor = self.database.cursor()
         cursor.execute(query, args)
         dat = cursor.fetchall()
         cursor.close()
@@ -433,9 +436,9 @@ class Communicator(object):
                 name = ""
                 desc = ""
                 for i in range(nlen):
-                    name += packet.get_data()[24 + i, 24 + 1 + i]
+                    name += packet.get_data()[24 + i: 24 + 1 + i].decode()
                 for i in range(dlen):
-                    desc += packet.get_data()[24 + nlen + i, 24 + 1 + nlen + i]
+                    desc += packet.get_data()[24 + nlen + i: 24 + 1 + nlen + i].decode()
                 self.db_query("UPDATE " + cfg.TB_CONNECTIONS + " SET inited=%s WHERE CUID=%s",
                               (1, packet.get_from_cuid()))
                 self.db_query("INSERT INTO " + cfg.TB_SPECIFICATIONS + " (numchan,name,description) VALUE (%s,%s,%s)",
@@ -463,11 +466,10 @@ class Communicator(object):
         """
         self.receiver.kill()
         self.give_goodbye()
-        self.give_info(b"Terminating receiver !")
-        # send an useless packet to make receiver receive it and then break the loop
-        # self.receiver.join()
+        self.receiver.join(1)
+        # timeout to avaid waiting for a packet that will never come (if network problem)
         self.sender.kill()
-        # self.sender.join()
+        self.sender.join()
         self.sock.close()
 
     def get_address(self):
@@ -517,7 +519,7 @@ if __name__ == "__main__":
         guid = file.read().replace("\n", "")
         file.close()
         a = Communicator(guid, cfg.IS_SERVER)
-        # while True:continue
+        while True:continue
     finally:
         a.stop()
     """#"""

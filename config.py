@@ -36,7 +36,7 @@ FCT_YOURETHIS = 0x02
 FCT_GIVEDATA = 0x10
 FCT_MYSPEC = 0x03
 FCT_GOODBYE = 0x20
-DATA_VALUE_SIZE = 0x04 * 0x08
+DATA_VALUE_SIZE = 4 * 0x08
 # size of each channel value (multiple of 0x08)
 MAX_PACKET_SIZE = 512
 
@@ -61,4 +61,4 @@ def warn(text):
 ################################################
 # Settings data                                #
 ################################################
-IS_SERVER = False
+IS_SERVER = True
