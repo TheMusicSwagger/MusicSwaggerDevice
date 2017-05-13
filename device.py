@@ -269,7 +269,8 @@ class Brain(object):
         return self.global_uid
 
     def send_data_to_serv(self,device):
-        self.communicator.give_data_packet(device.get_values())
+        if self.communicator.is_ready():
+            self.communicator.give_data_packet(device.get_values())
 
     def stop(self):
         self.device.kill()

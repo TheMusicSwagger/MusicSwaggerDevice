@@ -40,7 +40,6 @@ DATA_VALUE_SIZE = 4 * 0x08
 # size of each channel value (multiple of 0x08)
 MAX_PACKET_SIZE = 512
 
-
 # maximum size of a packet in bytes
 
 ################################################

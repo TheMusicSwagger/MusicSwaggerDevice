@@ -292,6 +292,8 @@ class Communicator(object):
 
     # cuid value
 
+    ready=None
+
     def __init__(self, guid, is_server=cfg.IS_SERVER, **ka):
         """
         :param guid: the guid of the device
@@ -329,9 +331,11 @@ class Communicator(object):
                                                 charset=cfg.DB_CHARSET)
             except pymysql.err.Error:
                 cfg.warn("Database setup error !")
+            self.ready=True
         else:
             # connection setup if
             self.init_connection()
+            self.ready=False
         """
         self.daemon = True
         # wait thread to stop before exiting program
@@ -361,6 +365,7 @@ class Communicator(object):
         return dat
 
     def on_receive(self, packet):
+        cfg.log(packet)
         if packet.get_to_cuid() == self.get_cuid() or packet.get_to_cuid() == cfg.CUID_BROASCAST:
             if packet.get_fonction_id() == cfg.FCT_INFO:
                 # self.exec_callback(4, [packet.get_from_cuid(), packet.get_data()])
@@ -400,7 +405,7 @@ class Communicator(object):
                               binascii.unhexlify(other_guid) + (2).to_bytes(1, "big"))
             elif packet.get_fonction_id() == cfg.FCT_YOURETHIS and not self.is_server:
                 # YOU'RE THIS
-                # cfg.log("YOU'RE THIS "+utls.bytes_to_hex_string(binascii.hexlify(packet.get_data()[:cfg.SIZE_GUID]))+" - "+utls.bytes_to_hex_string(binascii.hexlify(packet.get_data()[cfg.SIZE_GUID:])))
+                cfg.log("YOU'RE THIS "+utls.bytes_to_hex_string(binascii.hexlify(packet.get_data()[:cfg.SIZE_GUID]))+" - "+utls.bytes_to_hex_string(binascii.hexlify(packet.get_data()[cfg.SIZE_GUID:])))
                 cfg.log(utls.bytes_to_hex_string(
                     binascii.hexlify(packet.get_data()[:cfg.SIZE_GUID])) + " == " + self.get_guid() + " -> " + str(
                     utls.bytes_to_hex_string(binascii.hexlify(packet.get_data()[:cfg.SIZE_GUID])) == self.get_guid()))
@@ -410,6 +415,7 @@ class Communicator(object):
                     self.set_cuid(my_new_cuid)
                     # got new cuid
                     self.send(packet.get_from_cuid(), cfg.FCT_INFO, b'Hello !')
+                self.ready=True
             elif packet.get_fonction_id() == cfg.FCT_GIVEDATA and self.is_server:
                 # GIVE DATA
                 cfg.log("Give DATA :" + str(packet))
@@ -510,6 +516,9 @@ class Communicator(object):
     def give_goodbye(self):
         self.sender.add_to_queue(Packet().give_goodbye_packet(self.get_cuid()))
 
+    def is_ready(self):
+        return self.ready
+
 
 if __name__ == "__main__":
     a = None
@@ -520,6 +529,8 @@ if __name__ == "__main__":
         file.close()
         a = Communicator(guid, cfg.IS_SERVER)
         while True:continue
+    except KeyboardInterrupt:
+        cfg.log("User exiting...")
     finally:
         a.stop()
     """#"""
