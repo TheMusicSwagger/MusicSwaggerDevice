@@ -1,12 +1,6 @@
-import time, random, threading, uuid, os, smbus
+import time, random, threading, uuid, os
 import config as cfg
 from communicator import Communicator
-
-GPIO=None
-try:
-    import RPi.GPIO as GPIO
-except ImportError as e:
-    print("GPIO is for raspberry only !")
 
 
 class Device(object):
@@ -206,37 +200,36 @@ class HCSR04Device(ThreadedDevice):
     chanels = [DeviceChanel([1, 200])]
     name = "HCSR04UltrasonicGPIOSensor"
     description = "Implementation for the HCSR04 ultrasonic sensor giving a distance based on an echo sound."
+    GPIO=None
+    # gpio library pointer
     def __init__(self, refresh_interval=1000,callback=None):
         super(HCSR04Device, self).__init__(refresh_interval,callback)
-        if GPIO:
-            GPIO.setmode(GPIO.BCM)
-            self.trigger_pin = 23
-            self.echo_pin = 24
-            GPIO.setup(self.trigger_pin, GPIO.OUT)
-            GPIO.setup(self.echo_pin, GPIO.IN)
-        else:
-            cfg.warn("This must be used on a Raspberry Ri !")
+        import RPi.GPIO
+        self.GPIO=RPi.GPIO
+        self.GPIO.setmode(self.GPIO.BCM)
+        self.trigger_pin = 23
+        self.echo_pin = 24
+        self.GPIO.setup(self.trigger_pin, self.GPIO.OUT)
+        self.GPIO.setup(self.echo_pin, self.GPIO.IN)
 
     def refresh(self):
-        if GPIO:
-            GPIO.output(self.trigger_pin, False)
-            time.sleep(0.1)
-            GPIO.output(self.trigger_pin, True)
-            time.sleep(0.00001)
-            GPIO.output(self.trigger_pin, False)
-            pulse_start, pulse_end = 0, 0
-            while GPIO.input(self.echo_pin) == 0:
-                pulse_start = time.time()
-            while GPIO.input(self.echo_pin) == 1:
-                pulse_end = time.time()
-            pulse_duration = pulse_end - pulse_start
-            distance = int(pulse_duration * 17000)
-            self.chanels[0].set_value(distance)
+        self.GPIO.output(self.trigger_pin, False)
+        time.sleep(0.1)
+        self.GPIO.output(self.trigger_pin, True)
+        time.sleep(0.00001)
+        self.GPIO.output(self.trigger_pin, False)
+        pulse_start, pulse_end = 0, 0
+        while self.GPIO.input(self.echo_pin) == 0:
+            pulse_start = time.time()
+        while self.GPIO.input(self.echo_pin) == 1:
+            pulse_end = time.time()
+        pulse_duration = pulse_end - pulse_start
+        distance = int(pulse_duration * 17000)
+        self.chanels[0].set_value(distance)
 
     def kill(self):
         super(HCSR04Device, self).kill()
-        if GPIO:
-            GPIO.cleanup()
+        self.GPIO.cleanup()
 
 class L3GD20Device(ThreadedDevice):
     # constants
@@ -298,9 +291,13 @@ class L3GD20Device(ThreadedDevice):
     name = "L3GD20"
     description = "Implementation for the L3GD20 gyroscope giving the 3D angular speed and the temperature of the sensor."
 
+    smbus=None
+    # smbus library pointer
     def __init__(self,refresh_interval=1000,callback=None):
         super(L3GD20Device, self).__init__(refresh_interval,callback)
-        self.bus = smbus.SMBus(1)
+        import smbus
+        self.smbus=smbus
+        self.bus = self.smbus.SMBus(1)
 
         # checking sensor type
         id = self.read_byte(self.L3GD20_REGISTERS["WHO_AM_I"])
