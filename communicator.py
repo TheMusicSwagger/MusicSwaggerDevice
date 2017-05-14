@@ -427,8 +427,8 @@ class Communicator(object):
                     vals.append(int.from_bytes(
                         packet.get_data()[1 + (i * cfg.DATA_VALUE_SIZE // 8):1 + ((i + 1) * cfg.DATA_VALUE_SIZE // 8)],
                         "big"))
-                print(self.db_query("SELECT name FROM " + cfg.TB_SPECIFICATIONS + " WHERE cuid=" + str(
-                        packet.get_from_cuid()))[0][0]+ " -> "+vals)
+                print(str(self.db_query("SELECT name FROM " + cfg.TB_SPECIFICATIONS + " WHERE cuid=" + str(
+                        packet.get_from_cuid()))[0][0])+ " -> "+str(vals))
                 if self.data_callback:
                     self.data_callback(packet.get_from_cuid(),vals)
             elif packet.get_fonction_id() == cfg.FCT_MYSPEC and self.is_server:
