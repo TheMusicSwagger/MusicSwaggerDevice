@@ -197,7 +197,7 @@ class MyRandom2Device(ThreadedDevice):
         self.status = "Refreshed to : " + str(self.get_values())
 
 
-class HCSR04UltrasonicGPIOSensor(ThreadedDevice):
+class HCSR04Device(ThreadedDevice):
     """
     HCSR04 device : distance ultrason (RPi GPIO seulement)
     (https://electrosome.com/hc-sr04-ultrasonic-sensor-raspberry-pi/)
@@ -207,7 +207,7 @@ class HCSR04UltrasonicGPIOSensor(ThreadedDevice):
     name = "HCSR04UltrasonicGPIOSensor"
     description = "Implementation for the HCSR04 ultrasonic sensor giving a distance based on an echo sound."
     def __init__(self, refresh_interval=1000,callback=None):
-        super(HCSR04UltrasonicGPIOSensor, self).__init__(refresh_interval,callback)
+        super(HCSR04Device, self).__init__(refresh_interval,callback)
         if GPIO:
             GPIO.setmode(GPIO.BCM)
             self.trigger_pin = 23
@@ -234,7 +234,7 @@ class HCSR04UltrasonicGPIOSensor(ThreadedDevice):
             self.chanels[0].set_value(distance)
 
     def kill(self):
-        super(HCSR04UltrasonicGPIOSensor, self).kill()
+        super(HCSR04Device, self).kill()
         if GPIO:
             GPIO.cleanup()
 
@@ -385,7 +385,7 @@ class Brain(object):
 if __name__ == "__main__":
     device=brain=None
     try:
-        device=L3GD20Device(50)
+        device=HCSR04Device(100)
         brain = Brain(device)
         while True:continue
     except KeyboardInterrupt as e:
