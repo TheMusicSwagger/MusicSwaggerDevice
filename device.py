@@ -79,8 +79,8 @@ class ThreadedDevice(Device, threading.Thread):
 
     def __init__(self, refresh_interval, callback=None):
         super(ThreadedDevice, self).__init__()
-        # self.daemon = True
-        # ferme le Thread quand le programme principal se termine
+        self.daemon = True
+        # not waiting thread to stop before exiting program
         self.set_refresh_interval(refresh_interval)
         self.is_running = False
         self.is_killed = False

@@ -140,8 +140,11 @@ class Packet(object):
         return self
 
     def give_data_packet(self, from_cuid, data):
-        packed_data = b''.join([val.to_bytes(cfg.DATA_VALUE_SIZE // 8, "big") for val in data])
-        self.create(from_cuid, cfg.CUID_SERVER, cfg.FCT_GIVEDATA, packed_data)
+        try:
+            packed_data = b''.join([val.to_bytes(cfg.DATA_VALUE_SIZE // 8, "big") for val in data])
+            self.create(from_cuid, cfg.CUID_SERVER, cfg.FCT_GIVEDATA, packed_data)
+        except OverflowError:
+            pass
         return self
 
     def give_info_packet(self, from_cuid, to_cuid, data):
@@ -333,6 +336,11 @@ class Communicator(object):
                                                 charset=cfg.DB_CHARSET)
             except pymysql.err.Error:
                 cfg.warn("Database setup error !")
+
+            # clean tables
+            self.db_query("DELETE FROM " + cfg.TB_CONNECTIONS)
+            self.db_query("DELETE FROM " + cfg.TB_SPECIFICATIONS)
+
             self.ready = True
         else:
             # connection setup if
