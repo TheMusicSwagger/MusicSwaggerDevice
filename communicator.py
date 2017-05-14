@@ -1,6 +1,9 @@
-import threading, socket, binascii, pymysql, time, netifaces
+import threading, socket, binascii, time, netifaces
 import config as cfg
 import utils as utls
+
+if cfg.IS_SERVER:
+    import pymysql
 
 class Packet(object):
     is_ready = None
