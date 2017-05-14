@@ -202,6 +202,8 @@ class HCSR04Device(ThreadedDevice):
     description = "Implementation for the HCSR04 ultrasonic sensor giving a distance based on an echo sound."
     GPIO=None
     # gpio library pointer
+    timeout=100
+    # timeout for sensor in ms
     def __init__(self, refresh_interval=1000,callback=None):
         super(HCSR04Device, self).__init__(refresh_interval,callback)
         import RPi.GPIO
@@ -213,6 +215,7 @@ class HCSR04Device(ThreadedDevice):
         self.GPIO.setup(self.echo_pin, self.GPIO.IN)
 
     def refresh(self):
+        beginning=time.time()
         self.GPIO.output(self.trigger_pin, False)
         time.sleep(0.1)
         self.GPIO.output(self.trigger_pin, True)
@@ -221,8 +224,12 @@ class HCSR04Device(ThreadedDevice):
         pulse_start, pulse_end = 0, 0
         while self.GPIO.input(self.echo_pin) == 0:
             pulse_start = time.time()
+            if pulse_start-beginning>self.timeout/1000:
+                return
         while self.GPIO.input(self.echo_pin) == 1:
             pulse_end = time.time()
+            if pulse_end-pulse_start>self.timeout/1000:
+                return
         pulse_duration = pulse_end - pulse_start
         distance = int(pulse_duration * 17000)
         self.chanels[0].set_value(distance)
