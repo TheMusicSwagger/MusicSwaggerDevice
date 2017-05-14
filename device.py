@@ -138,7 +138,7 @@ class DeviceChanel(object):
     """
     value_range = None
     # liste de deux elements representant intervalle de valeurs possibles
-    last_value = None
+    last_value = 0
     # entier representant la valeur actuelle du sensor
 
     def __init__(self, value_range):
