@@ -5,6 +5,7 @@ import utils as utls
 if cfg.IS_SERVER:
     import pymysql
 
+
 class Packet(object):
     is_ready = None
     # indicate if the packet is ready or not
@@ -80,10 +81,11 @@ class Packet(object):
                 for iface in netifaces.interfaces():
                     try:
                         broad_ip = netifaces.ifaddresses(iface)[netifaces.AF_INET][0]["broadcast"]
-                        cfg.log("Found a correct interface : " + str(iface))
+                        # cfg.log("Found a correct interface : " + str(iface))
                         break
                     except:
-                        cfg.log("Not a correct interface : " + str(iface))
+                        pass
+                        # cfg.log("Not a correct interface : " + str(iface))
                 if broad_ip is None:
                     raise Exception("No interface available !")
                 if self.to_cuid != cfg.CUID_SERVER or self.to_cuid == cfg.CUID_BROASCAST:
@@ -264,11 +266,7 @@ class Receiver(threading.Thread):
         return self
 
 
-
 class Communicator(object):
-    # constants
-    AVAILABLE_CALLBACKS = ["error", "info", "stop", "data"]
-
     sock = None
     # socket udp to communicate data
 
@@ -291,19 +289,21 @@ class Communicator(object):
     # guid value
 
     communication_uid = None
-
     # cuid value
 
-    ready=None
+    ready = None
 
-    def __init__(self, guid, is_server=cfg.IS_SERVER, **ka):
+    data_callback=None
+    # the function to be called when data is received 'data_callback(cuid,data)'
+
+    def __init__(self, guid, is_server=cfg.IS_SERVER, data_callback=None):
         """
         :param guid: the guid of the device
         """
         super(Communicator, self).__init__()
 
         # setting up
-        self.callbacks = dict([(callid, ka.get(callid)) for callid in self.AVAILABLE_CALLBACKS])
+        self.data_callback=data_callback
 
         self.is_server = is_server
         self.global_uid = guid
@@ -333,27 +333,17 @@ class Communicator(object):
                                                 charset=cfg.DB_CHARSET)
             except pymysql.err.Error:
                 cfg.warn("Database setup error !")
-            self.ready=True
+            self.ready = True
         else:
             # connection setup if
             self.init_connection()
-            self.ready=False
+            self.ready = False
         """
         self.daemon = True
         # wait thread to stop before exiting program
         """
 
         while not self.is_ready(): continue
-
-    def exec_callback(self, id, data):
-        """
-        :param id: the id of the callback (the one from the 'self.AVAILABLE_CALLBACKS')
-        :param data: list [from_cuid,actual_data]
-        :return: callback return value
-        """
-        if self.callbacks[id] is None:
-            return
-        return self.callbacks[id](data)
 
     def init_connection(self):
         packed_data = binascii.unhexlify(self.get_guid())
@@ -373,7 +363,7 @@ class Communicator(object):
         if packet.get_to_cuid() == self.get_cuid() or packet.get_to_cuid() == cfg.CUID_BROASCAST:
             if packet.get_fonction_id() == cfg.FCT_INFO:
                 # self.exec_callback(4, [packet.get_from_cuid(), packet.get_data()])
-                cfg.log("Info : " + packet.get_data().decode("ascii"))
+                print("Info : " + packet.get_data().decode("ascii"))
             elif packet.get_fonction_id() == cfg.FCT_IAMNEW and self.is_server:
                 # I'M NEW
                 other_guid = binascii.hexlify(packet.get_data()).decode("ascii")
@@ -409,7 +399,9 @@ class Communicator(object):
                               binascii.unhexlify(other_guid) + (2).to_bytes(1, "big"))
             elif packet.get_fonction_id() == cfg.FCT_YOURETHIS and not self.is_server:
                 # YOU'RE THIS
-                cfg.log("YOU'RE THIS "+utls.bytes_to_hex_string(binascii.hexlify(packet.get_data()[:cfg.SIZE_GUID]))+" - "+utls.bytes_to_hex_string(binascii.hexlify(packet.get_data()[cfg.SIZE_GUID:])))
+                cfg.log("YOU'RE THIS " + utls.bytes_to_hex_string(
+                    binascii.hexlify(packet.get_data()[:cfg.SIZE_GUID])) + " - " + utls.bytes_to_hex_string(
+                    binascii.hexlify(packet.get_data()[cfg.SIZE_GUID:])))
                 cfg.log(utls.bytes_to_hex_string(
                     binascii.hexlify(packet.get_data()[:cfg.SIZE_GUID])) + " == " + self.get_guid() + " -> " + str(
                     utls.bytes_to_hex_string(binascii.hexlify(packet.get_data()[:cfg.SIZE_GUID])) == self.get_guid()))
@@ -419,22 +411,25 @@ class Communicator(object):
                     self.set_cuid(my_new_cuid)
                     # got new cuid
                     self.send(packet.get_from_cuid(), cfg.FCT_INFO, b'Hello !')
-                self.ready=True
+                self.ready = True
             elif packet.get_fonction_id() == cfg.FCT_GIVEDATA and self.is_server:
                 # GIVE DATA
                 cfg.log("Give DATA :" + str(packet))
-                if self.db_query("SELECT inited FROM " + cfg.TB_CONNECTIONS + " WHERE cuid="+str(packet.get_from_cuid()))[0][0] == 0:
+                if self.db_query("SELECT inited FROM " + cfg.TB_CONNECTIONS + " WHERE cuid=" + str(
+                        packet.get_from_cuid()))[0][0] == 0:
                     cfg.log("Device not initialized !")
                     return
 
+
                 vals = []
-                for i in range(2):
-                    # TODO : need DB to store device specs (simulating 2 channels)
+                for i in range(self.db_query("SELECT numchan FROM " + cfg.TB_SPECIFICATIONS + " WHERE cuid=" + str(
+                        packet.get_from_cuid()))[0][0]):
                     vals.append(int.from_bytes(
                         packet.get_data()[1 + (i * cfg.DATA_VALUE_SIZE // 8):1 + ((i + 1) * cfg.DATA_VALUE_SIZE // 8)],
                         "big"))
-                cfg.log(str(vals))
-                # TODO : NEED CALLBACK to give data
+                print(vals)
+                if self.data_callback:
+                    self.data_callback(packet.get_from_cuid(),vals)
             elif packet.get_fonction_id() == cfg.FCT_MYSPEC and self.is_server:
                 # MY SPEC
                 cfg.log("Give MYSPEC :" + str(packet))
@@ -449,17 +444,18 @@ class Communicator(object):
                     name += chr(packet.get_data()[3 + i])
                 for i in range(dlen):
                     desc += chr(packet.get_data()[3 + nlen + i])
-                cfg.log(name+" - "+desc)
+                cfg.log(name + " - " + desc)
                 self.db_query("UPDATE " + cfg.TB_CONNECTIONS + " SET inited=%s WHERE CUID=%s",
                               (1, packet.get_from_cuid()))
-                self.db_query("INSERT INTO " + cfg.TB_SPECIFICATIONS + " (numchan,name,description) VALUE (%s,%s,%s)",
-                              (nchan, name, desc))
+                self.db_query("INSERT INTO " + cfg.TB_SPECIFICATIONS + " (numchan,name,description,cuid) VALUE (%s,%s,%s,%s)",
+                              (nchan, name, desc,packet.get_from_cuid()))
                 cfg.log("DB Query finished !")
             elif packet.get_fonction_id() == cfg.FCT_GOODBYE:
                 # GOODBYE
                 cfg.log("Give GOODBYE :" + str(packet))
                 if self.is_server:
                     self.db_query("DELETE FROM " + cfg.TB_CONNECTIONS + " WHERE CUID=%s", (packet.get_from_cuid()))
+                    self.db_query("DELETE FROM " + cfg.TB_SPECIFICATIONS + " WHERE CUID=%s", (packet.get_from_cuid()))
                 else:
                     # self.callbacks['stop']()
                     pass
@@ -534,7 +530,7 @@ if __name__ == "__main__":
         guid = file.read().replace("\n", "")
         file.close()
         a = Communicator(guid, cfg.IS_SERVER)
-        while True:continue
+        while True: continue
     except KeyboardInterrupt:
         cfg.log("User exiting...")
     finally:
