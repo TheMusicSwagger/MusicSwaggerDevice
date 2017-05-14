@@ -344,7 +344,7 @@ class L3GD20Device(ThreadedDevice):
     def refresh(self):
         res=self.get_orientation()+[self.get_temperature()]
         for i in range(self.num_of_chanels):
-            self.chanels[i]=res[i]
+            self.chanels[i].set_value(res[i])
 
 class Brain(object):
     global_uid = None
