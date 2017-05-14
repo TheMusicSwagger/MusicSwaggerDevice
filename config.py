@@ -8,7 +8,7 @@ GUID_FILENAME = "guid"
 COMMUNICATION_PORT_SERVER = 55665
 COMMUNICATION_PORT_DEVICE = 55666
 # port du server
-DEBUG_MODE = True
+DEBUG_MODE = False
 RAISE_ERROR = False
 # mode debug
 DB_IP = "localhost"
