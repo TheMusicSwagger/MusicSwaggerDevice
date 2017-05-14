@@ -202,7 +202,7 @@ class HCSR04Device(ThreadedDevice):
     description = "Implementation for the HCSR04 ultrasonic sensor giving a distance based on an echo sound."
     GPIO=None
     # gpio library pointer
-    timeout=500
+    timeout=1000
     # timeout for sensor in ms
     def __init__(self, refresh_interval=1000,callback=None):
         super(HCSR04Device, self).__init__(refresh_interval,callback)
