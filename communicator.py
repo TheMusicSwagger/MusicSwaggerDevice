@@ -2,7 +2,6 @@ import threading, socket, binascii, pymysql, time, netifaces
 import config as cfg
 import utils as utls
 
-
 class Packet(object):
     is_ready = None
     # indicate if the packet is ready or not
@@ -436,19 +435,21 @@ class Communicator(object):
                 cfg.log("Give MYSPEC :" + str(packet))
                 # | NCHAN | NLEN | DLEN | NAME   | DESC   |
                 # | (8b)  | (8b) | (8b) | (NLENb)| (DLENb)|
-                nchan = int.from_bytes(packet.get_data()[:8], "big")
-                nlen = int.from_bytes(packet.get_data()[8:16], "big")
-                dlen = int.from_bytes(packet.get_data()[16:24], "big")
+                nchan = packet.get_data()[0]
+                nlen = packet.get_data()[1]
+                dlen = packet.get_data()[2]
                 name = ""
                 desc = ""
                 for i in range(nlen):
-                    name += packet.get_data()[24 + i: 24 + 1 + i].decode()
+                    name += chr(packet.get_data()[3 + i])
                 for i in range(dlen):
-                    desc += packet.get_data()[24 + nlen + i: 24 + 1 + nlen + i].decode()
+                    desc += chr(packet.get_data()[3 + nlen + i])
+                cfg.log(name+" - "+desc)
                 self.db_query("UPDATE " + cfg.TB_CONNECTIONS + " SET inited=%s WHERE CUID=%s",
                               (1, packet.get_from_cuid()))
                 self.db_query("INSERT INTO " + cfg.TB_SPECIFICATIONS + " (numchan,name,description) VALUE (%s,%s,%s)",
                               (nchan, name, desc))
+                cfg.log("DB Query finished !")
             elif packet.get_fonction_id() == cfg.FCT_GOODBYE:
                 # GOODBYE
                 cfg.log("Give GOODBYE :" + str(packet))
