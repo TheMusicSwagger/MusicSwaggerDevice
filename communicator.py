@@ -423,7 +423,7 @@ class Communicator(object):
             elif packet.get_fonction_id() == cfg.FCT_GIVEDATA and self.is_server:
                 # GIVE DATA
                 cfg.log("Give DATA :" + str(packet))
-                if self.db_query("SELECT inited FROM " + cfg.TB_CONNECTIONS + " WHERE cuid="+packet.get_from_cuid())[0][0] == 0:
+                if self.db_query("SELECT inited FROM " + cfg.TB_CONNECTIONS + " WHERE cuid="+str(packet.get_from_cuid()))[0][0] == 0:
                     cfg.log("Device not initialized !")
                     return
 
